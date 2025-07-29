@@ -7,19 +7,20 @@ import h5py
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 from matplotlib.ticker import AutoMinorLocator
+from matplotlib.patches import Rectangle
 figfac = 0.75
 plt.rcParams.update({'font.size': 8*figfac})
-
 
 #requirements:
 #   * shapes of strong and weak fields' waveforms are identical
 #   * larger delay values correspond to the weak pulse arriving later
 
 #define retrieval parameters:
-file         = 'tiptoe_wl_wwATAS' #name of HDF5 file with raw data
-n_om         = 40 #number of frequency bands used for waveform retrieval
-frac         = 0.99 #fraction of total fluence to be covered by frequency grid
-IE0_eV       = 9 #ionisation energy (eV)
+file         = 'tiptoe_funkyRDW+NIR_nitrogen' #name of HDF5 file with raw data
+n_om0        = 40 #number of frequency bands used for waveform retrieval
+frac         = 0.998 #fraction of total fluence to be covered by frequency grid
+IE0_eV       = 15.58 #ionisation energy (eV)
+check_input  = False #boolean, sets all spectral phases to 0
 
 # =============================================================================
 # PHYSICAL CONSTANTS:
@@ -42,33 +43,11 @@ a_au    = (e*a_0)**2 / U_au #atomic unit of electric polarisability (C^2*m^2/J)
 D2au    = 0.3934303 #1 Debye in atomic units
 
 # =============================================================================
-# LOAD EXPERIMENTAL DATA AND OPTIMISED PARAMETERS:
+# LOAD EXPERIMENTAL DATA:
 # =============================================================================
 
-
-def parse_snp(file):
-    'parses parameters from lazyCRIME retrieval snapshot file'
-    
-    with open(file, 'r') as snp:
-        txt = snp.read()
-        
-    #parse optimised parameters:
-    start = txt.find('[')
-    end = txt.find(']')
-    para_s = txt[start+1:end]
-    para_s = para_s.replace('\n', ' ')
-    para = [float(p) for p in para_s.split(', ')]
-    
-    return para
-
-
 #set up name for snapshot file:
-file_snp = file + '_nom={}_frac={}_IE={}eV'.format(n_om, frac, IE0_eV)
-
-#parse optimised parameters from snapshot file:
-para = parse_snp(file_snp + '.snp')
-delay0, F_hi, ratio_F = para[:3]
-phi = np.array(para[3:])
+file_snp = file + '_nom={}_frac={}_IE={}eV'.format(n_om0, frac, IE0_eV)
 
 #load TIPTOE data:
 with h5py.File(file + '.h5', 'r') as h5:
@@ -76,7 +55,7 @@ with h5py.File(file + '.h5', 'r') as h5:
     # for key in h5:
     #     print('  ' + key)
     delay_fs = h5['delays (fs)'][:]
-    trace = h5['rel. white-light yield'][:]
+    trace = h5['signal N2+'][:]
     # trace = h5['rel. yield N2+'][:]
     wav_spec = h5['wavelengths (nm)'][:]
     spec = h5['spectral intensities (arb. u.)'][:]
@@ -97,7 +76,7 @@ Rt = max(delay) - min(delay)
 
 #convert field-free ionisation energy to atomic units:
 IE0 = IE0_eV*e/U_au
-    
+
 # =============================================================================
 # FREQUENCY GRID:
 # =============================================================================
@@ -122,8 +101,13 @@ def frac_indices(tr, frac):
 
 #convert spectrum from wavelength (nm) to circular frequency (at. u.):
 om_spec = 2*pi*c_vac*t_au/(wav_spec*1e-9)
-dom_spec = abs(np.gradient(om_spec))
 spec_om = spec * 2*pi*c_vac*t_au/om_spec**2
+
+#sort spectrum with respect to ascending frequencies and compute increments:
+j_sort = np.argsort(om_spec)
+om_spec = om_spec[j_sort]
+spec_om = spec_om[j_sort]
+dom_spec = np.gradient(om_spec)
 
 #identify wavelength regions that amount to majority of fluence:
 j_maj = frac_indices(spec_om*dom_spec, frac)
@@ -131,15 +115,16 @@ j_maj = frac_indices(spec_om*dom_spec, frac)
 #set up zero-centred circular frequency grid that covers whole spectrum:
 om_a = min((om_spec - dom_spec/2)[j_maj])
 om_b = max((om_spec + dom_spec/2)[j_maj])
-Dom = np.sum(dom_spec[j_maj])/n_om
+Dom = np.sum(dom_spec[j_maj])/n_om0
 j_om = np.arange(int(np.ceil(om_b/Dom)))
 om = j_om * Dom
 j_bom = np.arange(int(np.ceil(om_b/Dom))+1) - 0.5
 bins_om = j_bom * Dom
 
 #project input spectrum onto compressed circular frequency grid:
-weights = spec_om * dom_spec/Dom
-spec_om_maj = np.histogram(om_spec, weights=weights, bins=bins_om)[0]
+cs = np.cumsum(spec_om*dom_spec)
+i_cs = interp1d(om_spec + dom_spec/2, cs, fill_value=0, bounds_error=False)
+spec_om_maj = np.diff(i_cs(bins_om))/Dom
 
 #compress circular frequency grid to region of fluence majority:
 b_maj = np.zeros(len(om_spec))
@@ -156,6 +141,40 @@ amp = sqrt(spec_om_maj/(Dom*np.sum(spec_om_maj)))
 #convert compressed spectrum back to wavelength (nm):
 wav = 2*pi*c_vac*1e9*t_au/om
 spec_wav_maj = (spec_om_maj*om**2)/(2*pi*c_vac*t_au)
+
+#compute mean optical period:
+Tm = 2*pi*np.sum(amp**2 / om)/np.sum(amp**2)
+
+
+def parse_snp(file):
+    'parses parameters from lazyCRIME retrieval snapshot file'
+    
+    with open(file, 'r') as snp:
+        txt = snp.read()
+        
+    #parse optimised parameters:
+    start = txt.find('[')
+    end = txt.find(']')
+    para_s = txt[start+1:end]
+    para_s = para_s.replace('\n', ' ')
+    para = [float(p) for p in para_s.split(', ')]
+    
+    return para
+
+
+#set up name for snapshot file:
+file_snp = file + '_nom={}_frac={}_IE={}eV'.format(n_om0, frac, IE0_eV)
+
+#parse optimised parameters from snapshot file:
+if check_input:
+    delay0 = 0
+    F_hi = 0.175
+    ratio_F = 1000
+    phi = np.zeros(n_om)
+else:
+    para = parse_snp(file_snp + '.snp')
+    delay0, F_hi, ratio_F = para[:3]
+    phi = np.array(para[3:])
 
 # =============================================================================
 # LASER-ELECTRIC FIELD AND TUNNELLING RATE:
@@ -291,7 +310,7 @@ def rate_adk(E_abs, IE):
 
 
 # =============================================================================
-# COMPUTE RECONSTRUCTED WAVEFORMS:
+# WAVEFORM RETRIEVAL:
 # =============================================================================
 
 
@@ -309,9 +328,8 @@ def minfunc(para):
     #compute offset delay grid:
     delay_o = delay - delay0
     
-    #find extrema of strong field and compute absolute local gradient:
+    #find extrema of strong field:
     t_hi = find_extrema(amp_hi, phi)
-    dt_hi = np.abs(np.gradient(t_hi))
     
     #evaluate field extrema:
     E_hi = efield_re(t_hi[:, None], om, Dom, amp_hi, phi)[:, 0]
@@ -319,22 +337,34 @@ def minfunc(para):
     #assess whether strong pulse triggers computable amount of ionisation:
     wi_hi = rate_adk(abs(E_hi), IE0)
     if 1 - np.prod(1 - wi_hi) > 0:
-    
-        #discard extrema at low relative field strength:
+        
+        #discard positive minima and negative maxima:
+        d2E_c = cos(phi[None]) * cos(j_om[None]*Dom*t_hi[:, None])
+        d2E_s = sin(phi[None]) * sin(j_om[None]*Dom*t_hi[:, None])
+        d2E_hi = -np.sum(amp[None] * (d2E_c + d2E_s) * (j_om[None]*Dom)**2, 1)
+        b_keep = E_hi*d2E_hi < 0
+        t_hi = t_hi[b_keep]
+        E_hi = E_hi[b_keep]
+        
+        #discard points at low relative field strength:
         b_keep = abs(E_hi) > 0.5*np.max(abs(E_hi))
         t_hi = t_hi[b_keep]
-        dt_hi = dt_hi[b_keep]
-        
+
         #set up anchor points for trapezoid composite integration:
-        Rt_trz = dt_hi/3 #local-wavelength scaled grid radius
         n_trz = 7 #number of trapezoids per shoulder
-        dt_anc = np.arange(-n_trz, n_trz+1)[None] * Rt_trz[:, None]/n_trz
-        t_trz2 = t_hi[:, None] + dt_anc
-        fac0_trz = np.ones(2*n_trz+1)
-        fac0_trz[[0, -1]] = 0.5
-        fac_trz2 = fac0_trz[None] * Rt_trz[:, None]/n_trz
-        t_trz = np.ravel(t_trz2)
-        fac_trz = np.ravel(fac_trz2)
+        inc_trz = Tm/(6*n_trz)
+        dt_anc = np.arange(-n_trz, n_trz+1) * inc_trz
+        t_trz2 = t_hi[:, None] + dt_anc[None]
+
+        #remove overlapping grid points:
+        left = t_trz2[:, 0]
+        right = t_trz2[:, -1]
+        centre = (right[:-1] + left[1:])/2
+        b_l = np.ones(t_trz2.shape, dtype=bool)
+        b_l[:-1] = t_trz2[:-1] < centre[:, None] + inc_trz/2
+        b_r = np.ones(t_trz2.shape, dtype=bool)
+        b_r[1:] = t_trz2[1:] > centre[:, None] - inc_trz/2
+        t_trz = np.sort(t_trz2[b_l & b_r])
     
         #evaluate electric fields on field-adapted grid:
         E_hi_trz = efield_re(t_trz[:, None], om, Dom, amp_hi, phi)
@@ -345,8 +375,10 @@ def minfunc(para):
         wi_sum = rate_adk(abs(E_hi_trz + E_lo_trz), IE0)
         
         #integrate along realtime axis to obtain cation populations:
-        Pn_ref = np.prod(1 - wi_ref*fac_trz)
-        Pn_sum = np.prod(1 - wi_sum*fac_trz[:, None], 0)
+        wm_ref = 0.5*(wi_ref[:-1] + wi_ref[1:])
+        Pn_ref = exp(-np.sum(wm_ref*np.diff(t_trz)))
+        wm_sum = 0.5*(wi_sum[:-1] + wi_sum[1:])
+        Pn_sum = exp(-np.sum(wm_sum*np.diff(t_trz)[:, None], 0))
         Pc_ref = 1 - Pn_ref
         Pc_sum = 1 - Pn_sum
         
@@ -409,7 +441,7 @@ dtime = 1
 time_plot = np.arange(min(delay), max(delay) + dtime, dtime) + delay0
 E_rec_c = efield_c(time_plot[:, None], om, Dom, amp_hi, phi)[:, 0]
 E_rec = np.real(E_rec_c)
-E_rec_a = np.abs(E_rec)
+E_rec_a = np.abs(E_rec_c)
 
 #find time boundaries that define the intensity envelope's FWHM:
 try:
@@ -426,21 +458,33 @@ dt_hi = np.abs(np.gradient(t_hi))
 #evaluate field extrema:
 E_hi = efield_re(t_hi[:, None], om, Dom, amp_hi, phi)[:, 0]
 
-#discard extrema at low relative field strength:
-b_keep = abs(E_hi) > 0.5*np.max(abs(E_hi))
+#discard positive minima and negative maxima:
+d2E_c = cos(phi[None]) * cos(j_om[None]*Dom*t_hi[:, None])
+d2E_s = sin(phi[None]) * sin(j_om[None]*Dom*t_hi[:, None])
+d2E_hi = -np.sum(amp[None] * (d2E_c + d2E_s) * (j_om[None]*Dom)**2, 1)
+b_keep = E_hi*d2E_hi < 0
 t_hi = t_hi[b_keep]
-dt_hi = dt_hi[b_keep]
+E_hi = E_hi[b_keep]
+
+#discard points at low relative field strength:
+b_keep = abs(E_hi) > 0.4*np.max(abs(E_hi))
+t_hi = t_hi[b_keep]
 
 #set up anchor points for trapezoid composite integration:
-Rt_trz = dt_hi/3 #local-wavelength scaled grid radius
-n_trz = 7 #number of trapezoids per shoulder
-dt_anc = np.arange(-n_trz, n_trz+1)[None] * Rt_trz[:, None]/n_trz
-t_trz2 = t_hi[:, None] + dt_anc
-fac0_trz = np.ones(2*n_trz+1)
-fac0_trz[[0, -1]] = 0.5
-fac_trz2 = fac0_trz[None] * Rt_trz[:, None]/n_trz
-t_trz = np.ravel(t_trz2)
-fac_trz = np.ravel(fac_trz2)
+n_trz = 5 #number of trapezoids per shoulder
+inc_trz = Tm/(6*n_trz)
+dt_anc = np.arange(-n_trz, n_trz+1) * inc_trz
+t_trz2 = t_hi[:, None] + dt_anc[None]
+
+#remove overlapping grid points:
+left = t_trz2[:, 0]
+right = t_trz2[:, -1]
+centre = (right[:-1] + left[1:])/2
+b_l = np.ones(t_trz2.shape, dtype=bool)
+b_l[:-1] = t_trz2[:-1] < centre[:, None] + inc_trz/2
+b_r = np.ones(t_trz2.shape, dtype=bool)
+b_r[1:] = t_trz2[1:] > centre[:, None] - inc_trz/2
+t_trz = np.sort(t_trz2[b_l & b_r])
 
 #evaluate electric fields on field-adapted grid:
 E_hi_trz = efield_re(t_trz[:, None], om, Dom, amp_hi, phi)
@@ -451,8 +495,10 @@ wi_ref = rate_adk(abs(E_hi_trz[:, 0]), IE0)
 wi_sum = rate_adk(abs(E_hi_trz + E_lo_trz), IE0)
 
 #integrate along realtime axis to obtain cation populations:
-Pn_ref = np.prod(1 - wi_ref*fac_trz)
-Pn_sum = np.prod(1 - wi_sum*fac_trz[:, None], 0)
+wm_ref = 0.5*(wi_ref[:-1] + wi_ref[1:])
+Pn_ref = exp(-np.sum(wm_ref*np.diff(t_trz)))
+wm_sum = 0.5*(wi_sum[:-1] + wi_sum[1:])
+Pn_sum = exp(-np.sum(wm_sum*np.diff(t_trz)[:, None], 0))
 Pc_ref = 1 - Pn_ref
 Pc_sum = 1 - Pn_sum
 
@@ -463,6 +509,10 @@ chi = np.sum((trace - ratio_ion)**2)/norm
 #compute mean time of ionisation:
 t_m = np.sum(t_trz * wi_ref)/np.sum(wi_ref)
 zeta = abs(t_m)/(0.5*Rt)
+
+#split frequency bands into islands:
+j_break = np.where(np.diff(om) > 1.5*Dom)[0] + 1
+j_split = np.split(np.arange(len(om)), j_break)
 
 #plot input spectrum, frequency-grid representation, and spectral phases:
 dwav_spec = abs(np.gradient(wav_spec))
@@ -478,11 +528,11 @@ plt.gca().set_xticklabels([])
 plt.ylabel(r'$I_{\lambda, \mathrm{input}}$')
 
 plt.subplot2grid((3, 1), (1, 0))
-for j in range(len(wav)):
-    plt.plot(2*[wav[j]], [0, spec_wav_maj[j]], c='red', lw=0.5*figfac, alpha=0.5)
-    wl = 2*pi*c_vac*1e9*t_au/(om[j] + Dom/2)
-    wr = 2*pi*c_vac*1e9*t_au/(om[j] - Dom/2)
-    plt.plot([wl, wr], 2*[spec_wav_maj[j]], c='red', lw=2.5*figfac, solid_capstyle='butt')
+for j in range(n_om):
+    wl_j = 2*pi*c_vac*1e9*t_au/(om[j] + Dom/2)
+    wr_j = 2*pi*c_vac*1e9*t_au/(om[j] - Dom/2)
+    rec_j = Rectangle((wl_j, 0), wr_j - wl_j, spec_wav_maj[j], lw=0, fc='red', alpha=0.5)
+    plt.gca().add_artist(rec_j)
 plt.gca().xaxis.set_minor_locator(AutoMinorLocator())
 plt.gca().yaxis.set_minor_locator(AutoMinorLocator())
 plt.xlim(wav_spec[0] - dwav_spec[0]/2, wav_spec[-1] + dwav_spec[-1]/2)
@@ -491,17 +541,19 @@ plt.gca().set_xticklabels([])
 plt.ylabel(r'$I_{\lambda, \mathrm{grid}}$')
 
 plt.subplot2grid((3, 1), (2, 0))
-for j in range(len(wav)):
-    plt.plot(2*[wav[j]], [0, phi[j]], c='green', lw=0.5*figfac, alpha=0.5)
-    wl = 2*pi*c_vac*1e9*t_au/(om[j] + Dom/2)
-    wr = 2*pi*c_vac*1e9*t_au/(om[j] - Dom/2)
-    plt.plot([wl, wr], 2*[phi[j]], c='green', lw=2.5*figfac, solid_capstyle='butt')
+for jj in j_split:
+    wl_jj = 2*pi*c_vac*1e9*t_au/(om[jj] - Dom/2)
+    wr_jj = 2*pi*c_vac*1e9*t_au/(om[jj] + Dom/2)
+    w_jj = np.ravel(np.stack((wl_jj[:, None], wr_jj[:, None]), 1))
+    phi_jj = np.repeat(phi[jj], 2)
+    plt.plot(w_jj, phi_jj, c='green', lw=0.75*figfac)
 plt.gca().xaxis.set_minor_locator(AutoMinorLocator())
 plt.gca().yaxis.set_minor_locator(AutoMinorLocator())
 plt.xlim(wav_spec[0] - dwav_spec[0]/2, wav_spec[-1] + dwav_spec[-1]/2)
 plt.ylim([0, None])
 plt.xlabel(r'$\lambda$ (nm)')
-plt.ylabel(r'$\phi$')
+plt.ylabel(r'$\phi$ (rad.)')
+# plt.savefig('lazyCRIME_spectra.png', bbox_inches='tight', dpi=600)
 plt.show()
 
 #plot TIPTOE trace comparison along with reconstructed electric field:
@@ -509,8 +561,8 @@ lim_t = [min(delay_fs), max(delay_fs)]
 fig = plt.figure(figsize=(5*figfac, 3*figfac))
 fig.subplots_adjust(hspace=0.8*figfac)
 ax1 = plt.subplot2grid((2, 1), (0, 0))
-plt.plot(delay*t_au*1e15, trace, lw=1*figfac, c='black', ls='-')
-plt.plot(delay*t_au*1e15, ratio_ion, lw=1*figfac, c='red', ls='--')
+plt.plot(delay*t_au*1e15, trace, lw=0.75*figfac, c='black', ls='-')
+plt.plot(delay*t_au*1e15, ratio_ion, lw=0.75*figfac, c='red', ls='--')
 plt.xlim(lim_t)
 plt.xlabel(r'$\tau$ (fs)')
 plt.ylabel(r'$Q$')
@@ -523,16 +575,17 @@ ax1.xaxis.set_minor_locator(AutoMinorLocator())
 ax2 = plt.subplot2grid((2, 1), (1, 0))
 plt.fill_between(-(time_plot - delay0)*t_au*1e15, -E_rec_a, E_rec_a, lw=0,
                  color='red', alpha=0.1)
-plt.plot(-(time_plot - delay0)*t_au*1e15, E_rec, lw=1*figfac, c='red')
-plt.plot(-(time_plot - delay0)*t_au*1e15, -E_rec_a, lw=0.5*figfac, c='red', ls='--')
-plt.plot(-(time_plot - delay0)*t_au*1e15, E_rec_a, lw=0.5*figfac, c='red', ls='--')
-plt.axvline(-(t_rise - delay0)*t_au*1e15, c='black', lw=0.5*figfac, ls='--')
-plt.axvline(-(t_fall - delay0)*t_au*1e15, c='black', lw=0.5*figfac, ls='--')
+plt.plot(-(time_plot - delay0)*t_au*1e15, -E_rec, lw=0.5*figfac, c='red')
+plt.plot(-(time_plot - delay0)*t_au*1e15, -E_rec_a, lw=0.25*figfac, c='red', ls='--')
+plt.plot(-(time_plot - delay0)*t_au*1e15, E_rec_a, lw=0.25*figfac, c='red', ls='--')
 plt.xlim(lim_t)
 plt.ylim(-max(abs(E_rec))*1.2, max(abs(E_rec))*1.2)
 plt.xlabel(r'$-t$ (fs)')
 plt.ylabel(r'$\epsilon_\mathrm{hi}$ (at. u.)')
 ax2.xaxis.set_minor_locator(AutoMinorLocator())
+plt.axvline(-(t_rise - delay0)*t_au*1e15, c='black', lw=0.5*figfac, ls='--')
+plt.axvline(-(t_fall - delay0)*t_au*1e15, c='black', lw=0.5*figfac, ls='--')
 plt.text(0.02, 0.95, r'$\mathrm{FWHM}_I = ' + str(round(fwhm_fs, 2)) + r'$ fs',
          ha='left', va='top', transform=ax2.transAxes)
+# plt.savefig('lazyCRIME_Q+field.png', bbox_inches='tight', dpi=600)
 plt.show()
