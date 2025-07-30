@@ -347,7 +347,7 @@ def minfunc(para):
         E_hi = E_hi[b_keep]
         
         #discard points at low relative field strength:
-        b_keep = abs(E_hi) > 0.5*np.max(abs(E_hi))
+        b_keep = abs(E_hi) > 0.4*np.max(abs(E_hi))
         t_hi = t_hi[b_keep]
 
         #set up anchor points for trapezoid composite integration:
@@ -451,9 +451,8 @@ except:
     t_rise, t_fall = time_plot[[0, -1]]
     fwhm_fs = np.nan
 
-#find extrema of strong field and compute absolute local gradient:
+#find extrema of strong field:
 t_hi = find_extrema(amp_hi, phi)
-dt_hi = np.abs(np.gradient(t_hi))
 
 #evaluate field extrema:
 E_hi = efield_re(t_hi[:, None], om, Dom, amp_hi, phi)[:, 0]
@@ -471,7 +470,7 @@ b_keep = abs(E_hi) > 0.4*np.max(abs(E_hi))
 t_hi = t_hi[b_keep]
 
 #set up anchor points for trapezoid composite integration:
-n_trz = 5 #number of trapezoids per shoulder
+n_trz = 7 #number of trapezoids per shoulder
 inc_trz = Tm/(6*n_trz)
 dt_anc = np.arange(-n_trz, n_trz+1) * inc_trz
 t_trz2 = t_hi[:, None] + dt_anc[None]

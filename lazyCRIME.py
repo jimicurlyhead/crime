@@ -292,7 +292,7 @@ def minfunc(para):
         E_hi = E_hi[b_keep]
         
         #discard points at low relative field strength:
-        b_keep = abs(E_hi) > 0.5*np.max(abs(E_hi))
+        b_keep = abs(E_hi) > 0.4*np.max(abs(E_hi))
         t_hi = t_hi[b_keep]
 
         #set up anchor points for trapezoid composite integration:
