@@ -13,12 +13,14 @@ import sys
 #   * shapes of strong and weak fields' waveforms are identical
 #   * larger delay values correspond to the weak pulse arriving later
 
+#define time identifier of measurement:
+time_id      = '240416_1458_2'
+
 #define retrieval parameters:
-file         = 'tiptoe_funkyRDW+NIR_nitrogen' #name of HDF5 file with raw data
-n_om0        = 40 #number of frequency bands used for waveform retrieval
+species      = 'Ne'
 frac         = 0.998 #fraction of total fluence to be covered by frequency grid
-IE0_eV       = 15.58 #ionisation energy (eV)
-n_co         = 126 #number of available processors for multithreading
+n_om0        = 20 #number of frequency bands used for waveform retrieval
+n_co         = 127 #number of available processors for multithreading
 
 # =============================================================================
 # PHYSICAL CONSTANTS:
@@ -40,29 +42,28 @@ E_au    = U_au/(e*a_0) #atomic unit of electric field strength (V/m)
 a_au    = (e*a_0)**2 / U_au #atomic unit of electric polarisability (C^2*m^2/J)
 D2au    = 0.3934303 #1 Debye in atomic units
 
+#set up dictionary of field-free vertical ionisation energies in eV:
+d_IE0_eV = {'He':24.587, 'Ne':21.565, 'Ar':15.759, 'N2':15.58, 'H2O':12.600}
+
 # =============================================================================
 # LOAD EXPERIMENTAL DATA:
 # =============================================================================
 
 #set up name for snapshot file:
-file_snp = file + '_nom={}_frac={}_IE={}eV'.format(n_om0, frac, IE0_eV)
+file_snp = 'lazycrime_{}_{}_nom={}_frac={}.snp'.format(time_id, species, n_om0, frac)
 
 #initialise wall clock time:
 start = datetime.now()
 now = datetime.now()
 
 #load TIPTOE data:
-with h5py.File(file + '.h5', 'r') as h5:
-    # print('datasets in {}:'.format(file + '.h5'))
-    # for key in h5:
-    #     print('  ' + key)
-    delay_fs = h5['delays (fs)'][:]
-    trace = h5['signal N2+'][:]
+file = 'tiptoe_{}.h5'.format(time_id)
+with h5py.File(file, 'r') as h5:
+    delay_fs = h5['target delays (fs)'][:]
+    trace = h5['signal {}+'.format(species)][:]
     # trace = h5['rel. yield N2+'][:]
-    wav_spec = h5['wavelengths (nm)'][:]
-    spec = h5['spectral intensities (arb. u.)'][:]
-    # wav_spec = h5['wavelengths weak pulse (nm)'][:]
-    # spec = h5['spectral intensities weak pulse (arb. u.)'][:]
+    wav_spec = h5['wavelengths weak pulse (nm)'][:]
+    spec = h5['spectral intensities weak pulse (arb. u.)'][:]
 
 #centre delay frame:
 delay_fs -= np.mean(delay_fs)
@@ -77,7 +78,7 @@ norm = np.sum((trace - 1)**2)
 Rt = max(delay) - min(delay)
 
 #convert field-free ionisation energy to atomic units:
-IE0 = IE0_eV*e/U_au
+IE0 = d_IE0_eV[species]*e/U_au
 
 # =============================================================================
 # FREQUENCY GRID:
@@ -392,7 +393,7 @@ def callback(xk, convergence):
                 sep = ' '
             para += ',{}{}'.format(sep, x)
         para += ']\n'
-        with open('{}.snp'.format(file_snp), 'w') as txt:
+        with open(file_snp, 'w') as txt:
             txt.write(header + para)
         now = datetime.now()
         
@@ -435,8 +436,8 @@ if __name__ == "__main__":
     print('running waveform retrieval with {} processor(s)...'.format(n_co))
     print('   n_om        : {}'.format(n_om))
     print('   frac        : {}'.format(frac))
-    print('   IE          : {} eV'.format(IE0_eV))
-    print('   output file : {}.snp'.format(file_snp))
+    print('   species     : {}'.format(species))
+    print('   output file : {}'.format(file_snp))
     result = extract_field()
     
     #save results:
@@ -451,7 +452,7 @@ if __name__ == "__main__":
             sep = ' '
         para += ',{}{}'.format(sep, x)
     para += ']\n'
-    with open('{}.snp'.format(file_snp), 'w') as txt:
+    with open(file_snp, 'w') as txt:
         txt.write(header + para)
         
     #update display of total optimisation target:

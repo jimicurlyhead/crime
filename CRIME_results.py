@@ -14,13 +14,13 @@ plt.rcParams.update({'font.size': 10*figfac})
 #   * larger delay values correspond to the weak pulse arriving later
 
 #define time identifier of measurement:
-time_id = '240416_1458_2'
+time_id     = '240416_1458_2'
 
 #define retrieval parameters:
 species     = 'Ne'
 frac        = 0.998 #fraction of total fluence to be covered by frequency grid
 q_lo        = 0.95 #minimum fraction of weak pulse's fluence within delay frame
-n_om0       = 40
+n_om0       = 20
 check_input = False #boolean, sets all spectral phases to 0
 
 # =============================================================================
@@ -51,7 +51,7 @@ d_IE0_eV = {'He':24.587, 'Ne':21.565, 'Ar':15.759, 'N2':15.58, 'H2O':12.600}
 # =============================================================================
 
 #set up name for snapshot file:
-file_snp = 'tiptoe_{}_{}_nom={}_frac={}_qlo={}.snp'.format(time_id, species, n_om0, frac, q_lo)
+file_snp = 'crime_{}_{}_nom={}_frac={}_qlo={}.snp'.format(time_id, species, n_om0, frac, q_lo)
 
 #load TIPTOE data:
 file = 'tiptoe_{}.h5'.format(time_id)

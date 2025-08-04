@@ -15,11 +15,13 @@ plt.rcParams.update({'font.size': 8*figfac})
 #   * shapes of strong and weak fields' waveforms are identical
 #   * larger delay values correspond to the weak pulse arriving later
 
+#define time identifier of measurement:
+time_id      = '240416_1458_2'
+
 #define retrieval parameters:
-file         = 'tiptoe_funkyRDW+NIR_nitrogen' #name of HDF5 file with raw data
-n_om0        = 40 #number of frequency bands used for waveform retrieval
+species      = 'Ne'
 frac         = 0.998 #fraction of total fluence to be covered by frequency grid
-IE0_eV       = 15.58 #ionisation energy (eV)
+n_om0        = 40 #number of frequency bands used for waveform retrieval
 check_input  = False #boolean, sets all spectral phases to 0
 
 # =============================================================================
@@ -42,25 +44,27 @@ E_au    = U_au/(e*a_0) #atomic unit of electric field strength (V/m)
 a_au    = (e*a_0)**2 / U_au #atomic unit of electric polarisability (C^2*m^2/J)
 D2au    = 0.3934303 #1 Debye in atomic units
 
+#set up dictionary of field-free vertical ionisation energies in eV:
+d_IE0_eV = {'He':24.587, 'Ne':21.565, 'Ar':15.759, 'N2':15.58, 'H2O':12.600}
+
 # =============================================================================
 # LOAD EXPERIMENTAL DATA:
 # =============================================================================
 
 #set up name for snapshot file:
-file_snp = file + '_nom={}_frac={}_IE={}eV'.format(n_om0, frac, IE0_eV)
+file_snp = 'lazycrime_{}_{}_nom={}_frac={}.snp'.format(time_id, species, n_om0, frac)
 
 #load TIPTOE data:
-with h5py.File(file + '.h5', 'r') as h5:
-    # print('datasets in {}:'.format(file + '.h5'))
-    # for key in h5:
-    #     print('  ' + key)
-    delay_fs = h5['delays (fs)'][:]
-    trace = h5['signal N2+'][:]
+file = 'tiptoe_{}.h5'.format(time_id)
+with h5py.File(file, 'r') as h5:
+    print('datasets in {}:'.format(file))
+    for key in h5:
+        print('  ' + key)
+    delay_fs = h5['target delays (fs)'][:]
+    trace = h5['signal {}+'.format(species)][:]
     # trace = h5['rel. yield N2+'][:]
-    wav_spec = h5['wavelengths (nm)'][:]
-    spec = h5['spectral intensities (arb. u.)'][:]
-    # wav_spec = h5['wavelengths weak pulse (nm)'][:]
-    # spec = h5['spectral intensities weak pulse (arb. u.)'][:]
+    wav_spec = h5['wavelengths weak pulse (nm)'][:]
+    spec = h5['spectral intensities weak pulse (arb. u.)'][:]
 
 #centre delay frame:
 delay_fs -= np.mean(delay_fs)
@@ -75,7 +79,7 @@ norm = np.sum((trace - 1)**2)
 Rt = max(delay) - min(delay)
 
 #convert field-free ionisation energy to atomic units:
-IE0 = IE0_eV*e/U_au
+IE0 = d_IE0_eV[species]*e/U_au
 
 # =============================================================================
 # FREQUENCY GRID:
@@ -162,9 +166,6 @@ def parse_snp(file):
     return para
 
 
-#set up name for snapshot file:
-file_snp = file + '_nom={}_frac={}_IE={}eV'.format(n_om0, frac, IE0_eV)
-
 #parse optimised parameters from snapshot file:
 if check_input:
     delay0 = 0
@@ -172,7 +173,7 @@ if check_input:
     ratio_F = 1000
     phi = np.zeros(n_om)
 else:
-    para = parse_snp(file_snp + '.snp')
+    para = parse_snp(file_snp)
     delay0, F_hi, ratio_F = para[:3]
     phi = np.array(para[3:])
 
