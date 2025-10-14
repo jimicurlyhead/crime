@@ -179,8 +179,6 @@ Tm_hi = 2*pi*np.sum(amp_hi**2 / om)/np.sum(amp_hi**2)
 #prepare time-integrated intensities:
 It_hi = 2*pi*np.sum(amp_hi**2)*Dom
 It_lo = 2*pi*np.sum(amp_lo**2)*Dom
-II_hi = np.sum(amp_hi**2)
-II_lo = np.sum(amp_lo**2)
 
 # =============================================================================
 # LASER-ELECTRIC FIELD AND TUNNELLING RATE:

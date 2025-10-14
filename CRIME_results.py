@@ -1,27 +1,36 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import h5py
-import numpy as np
-from numpy import pi, sin, cos, sqrt, exp
-from scipy.interpolate import interp1d
-import matplotlib.pyplot as plt
-from matplotlib.ticker import AutoMinorLocator
-figfac = 0.6 #figure scaling factor
-plt.rcParams.update({'font.size': 10*figfac})
-
 #requirements:
 #   * larger delay values correspond to the weak pulse arriving later
 
-#define time identifier of measurement:
-time_id     = '240416_1458_2'
+# =============================================================================
+# USER INPUT:
+# =============================================================================
+
+#define data identifier for HDF5 file with input data:
+identifier  = 'inputexample'
 
 #define retrieval parameters:
-species     = 'Ne'
+species     = 'He' #define atomic/molecular target
 frac        = 0.998 #fraction of total fluence to be covered by frequency grid
-q_lo        = 0.95 #minimum fraction of weak pulse's fluence within delay frame
-n_om0       = 20
+q_set       = 0.90 #minimum fraction of weak pulse's fluence within delay/time window
+n_om0       = 10 #number of frequency grid points
 check_input = False #boolean, sets all spectral phases to 0
+
+# =============================================================================
+# LOAD MODULES:
+# =============================================================================
+
+import numpy as np
+from numpy import pi, sin, cos, sqrt, exp
+import h5py
+from scipy.interpolate import interp1d
+import matplotlib.pyplot as plt
+from matplotlib.ticker import AutoMinorLocator
+from matplotlib.patches import Rectangle
+figfac = 0.6 #figure scaling factor
+plt.rcParams.update({'font.size': 10*figfac})
 
 # =============================================================================
 # PHYSICAL CONSTANTS:
@@ -43,28 +52,28 @@ E_au    = U_au/(e*a_0) #atomic unit of electric field strength (V/m)
 a_au    = (e*a_0)**2 / U_au #atomic unit of electric polarisability (C^2*m^2/J)
 D2au    = 0.3934303 #1 Debye in atomic units
 
-#set up dictionary of field-free vertical ionisation energies in eV:
-d_IE0_eV = {'He':24.587, 'Ne':21.565, 'Ar':15.759, 'N2':15.58, 'H2O':12.600}
+#set up dictionary of field-free vertical ionisation energies (eV):
+d_IE0_eV = {'He':24.587, 'Ne':21.565, 'Ar':15.759, 'N2':15.58}
 
 # =============================================================================
 # LOAD EXPERIMENTAL DATA:
 # =============================================================================
 
 #set up name for snapshot file:
-file_snp = 'crime_{}_{}_nom={}_frac={}_qlo={}.snp'.format(time_id, species, n_om0, frac, q_lo)
+file_snp = 'crime_{}_{}_nom={}_frac={}_qlo={}.snp'.format(identifier, species, n_om0, frac, q_set)
 
-#load TIPTOE data:
-file = 'tiptoe_{}.h5'.format(time_id)
+#load input data:
+file = '{}.h5'.format(identifier)
 with h5py.File(file, 'r') as h5:
     print('datasets in {}:'.format(file))
     for key in h5:
         print('  ' + key)
-    delay_fs = h5['target delays (fs)'][:]
-    trace = h5['signal {}+'.format(species)][:]
-    wav_spec_hi = h5['wavelengths strong pulse (nm)'][:]
-    wav_spec_lo = h5['wavelengths weak pulse (nm)'][:]
-    spec_hi = h5['spectral intensities strong pulse (arb. u.)'][:]
-    spec_lo = h5['spectral intensities weak pulse (arb. u.)'][:]
+    delay_fs = h5['delay (fs)'][:]
+    trace = h5['rel. yield {}+'.format(species)][:]
+    wav_spec_hi = h5['wavelength strong pulse (nm)'][:]
+    spec_hi = h5['spectral intensity strong pulse (arb. u.)'][:]
+    wav_spec_lo = h5['wavelength weak pulse (nm)'][:]
+    spec_lo = h5['spectral intensity weak pulse (arb. u.)'][:]
     atts = dict(h5.attrs)
     F_hi = atts['peak fluence strong pulse (J/m^2)']
     F_lo = atts['peak fluence weak pulse (J/m^2)']
@@ -117,10 +126,14 @@ j_sort_hi = np.argsort(om_spec_hi)
 om_spec_hi = om_spec_hi[j_sort_hi]
 spec_om_hi = spec_om_hi[j_sort_hi]
 dom_spec_hi = np.gradient(om_spec_hi)
+wav_spec_hi = wav_spec_hi[j_sort_hi]
+spec_hi = spec_hi[j_sort_hi]
 j_sort_lo = np.argsort(om_spec_lo)
 om_spec_lo = om_spec_lo[j_sort_lo]
 spec_om_lo = spec_om_lo[j_sort_lo]
 dom_spec_lo = np.gradient(om_spec_lo)
+wav_spec_lo = wav_spec_lo[j_sort_lo]
+spec_lo = spec_lo[j_sort_lo]
 
 #compute time-integrated intensities from peak fluences (at. u.):
 Esq_f_hi = 2*F_hi/(c_vac*eps_0) / (t_au*E_au**2)
@@ -190,8 +203,6 @@ Tm_hi = 2*pi*np.sum(amp_hi**2 / om_hi)/np.sum(amp_hi**2)
 #prepare time-integrated intensities:
 It_hi = 2*pi*np.sum(amp_hi**2)*Dom_hi
 It_lo = 2*pi*np.sum(amp_lo**2)*Dom_lo
-II_hi = np.sum(amp_hi**2)
-II_lo = np.sum(amp_lo**2)
 
 # =============================================================================
 # LASER-ELECTRIC FIELD AND TUNNELLING RATE:
@@ -201,8 +212,8 @@ II_lo = np.sum(amp_lo**2)
 def efield_c(time, om_i, Dom, amp_i, phi_i):
     '''composes the time domain representation of a laser-electric field in its
     complex form based on its properties in the frequency domain. the spectral
-    amplitudes and phases are assumed to be constant in between the given
-    frequency bins bom_i.
+    amplitudes and phases are assumed to be constant within the frequency
+    increments defined by om_i and Dom.
     returns field in complex form
     
     time  : time grid in atomic units, shape (n_t, n_tau)
@@ -228,8 +239,8 @@ def efield_c(time, om_i, Dom, amp_i, phi_i):
 def efield_re(time, om_i, Dom, amp_i, phi_i):
     '''composes the time domain representation of a laser-electric field in its
     real form based on its properties in the frequency domain. the spectral
-    amplitudes and phases are assumed to be constant in between the given
-    frequency bins bom_i.
+    amplitudes and phases are assumed to be constant within the frequency
+    increments defined by om_i and Dom.
     returns field in real form
     
     time  : time grid in atomic units, shape (n_t, n_tau)
@@ -254,7 +265,7 @@ def efield_re(time, om_i, Dom, amp_i, phi_i):
 
 def find_extrema(amp, phi, j_om, Dom):
     '''determines the time-domain extreme value positions of the given electric
-    field from its frequency-domain properties by finding the eigenvalues of
+    field from its frequency-domain properties, by finding the eigenvalues of
     the underlying trigonometric polynomial's companion matrix. [1]
     the frequency grid of the polynomial is required to be equidistant and
     rooted at zero.
@@ -309,8 +320,8 @@ def rate_adk(E_abs, IE):
     [1] X. M. Tong and C. D. Lin, J. Phys. B 38, 2593--2600 (2005)
     [2] X. M. Tong et al., Phys. Rev. A 66, 033402 (2002)
     
-    E_abs : absolute electric field strength (atomic units)
-    IE    : ionisation energy (atomic units)'''
+    E_abs : absolute electric field strength in atomic units, shape (n_t,)
+    IE    : ionisation energy in atomic units, scalar'''
             
     #get indices for absolute electric field strengths greater than zero:
     b_g0 = E_abs > 0
@@ -335,12 +346,12 @@ def rate_adk(E_abs, IE):
 # =============================================================================
 
 
-def chietazeta(para):
-    'computes deviation between measured TIPTOE trace and model'
+def chiqtm(para):
+    'quantifies deviation between measured TIPTOE trace and model'
     
     #parse spectral phases:
-    phi_hi = para[:n_om_hi]
-    phi_lo = para[n_om_hi:]
+    phi_hi = np.array(para[:n_om_hi])
+    phi_lo = np.array(para[n_om_hi:])
     
     #find extrema of strong field:
     t_hi = find_extrema(amp_hi, phi_hi, j_om_hi, Dom_hi)
@@ -357,8 +368,6 @@ def chietazeta(para):
     #compute fraction of weak pulse within observation window:
     E_los = E_lo**2
     It_cen = 0.5*np.sum((E_los[:-1] + E_los[1:])*np.diff(t_lo))
-    print("weak pulse's fluence ratio:", It_cen/It_lo)
-    eta = max(q_lo - It_cen/It_lo, 0)/q_lo
     
     #assess whether strong pulse triggers computable amount of ionisation:
     wi_hi = rate_adk(abs(E_hi), IE0)
@@ -414,10 +423,8 @@ def chietazeta(para):
         
         #compute mean time of ionisation:
         t_m = np.sum(t_trz * wi_ref)/np.sum(wi_ref)
-        zeta = abs(t_m)/(0.5*Rt)
-        print("strong pulse's timing:", t_m)
         
-        return chi, eta, zeta
+        return chi, It_cen/It_lo, t_m
         
     else:
         
@@ -425,14 +432,11 @@ def chietazeta(para):
         E_his = E_hi**2
         It_cen = 0.5*np.sum((E_his[:-1] + E_his[1:])*np.diff(t_hi))
         mu = 4*(2 - It_cen/It_hi)
-        print("strong pulse's fluence ratio:", It_cen/It_hi)
         
         #compute mean time of strong pulse's intensity envelope:
         t_m = np.sum(t_hi * E_his)/np.sum(E_his)
-        zeta = abs(t_m)/(0.5*Rt)
-        print("strong pulse's timing:", t_m)
         
-        return mu, eta, zeta
+        return mu, It_cen/It_lo, t_m
 
 
 def fwhm_limits(x, y):
@@ -475,9 +479,9 @@ def parse_snp(file):
 if check_input:
     para = np.zeros(n_om_hi+n_om_lo)
 else:
-    para = parse_snp('results/' + file_snp)
+    para = parse_snp(file_snp)
 
-#parse spectral phases:
+#unwrap spectral phases:
 phi_hi = np.unwrap(para[:n_om_hi])
 phi_lo = np.unwrap(para[n_om_hi:])
 
@@ -485,7 +489,7 @@ phi_lo = np.unwrap(para[n_om_hi:])
 dtime = 1
 time_plot = np.arange(min(delay) - Rt, max(delay) + Rt + dtime, dtime)
 E_rec_hi_c = efield_c(time_plot[:, None], om_hi, Dom_hi, amp_hi, phi_hi)[:, 0]
-E_rec_lo_c = efield_c(time_plot[:, None], om_lo, Dom_hi, amp_lo, phi_lo)[:, 0]
+E_rec_lo_c = efield_c(time_plot[:, None], om_lo, Dom_lo, amp_lo, phi_lo)[:, 0]
 
 #compute absolute electric fields and envelopes:
 E_rec_hi = np.real(E_rec_hi_c)
@@ -493,11 +497,11 @@ E_rec_lo = np.real(E_rec_lo_c)
 E_rec_hi_a = np.abs(E_rec_hi_c)
 E_rec_lo_a = np.abs(E_rec_lo_c)
 
-# #find time boundaries that define the intensity envelopes FWHM:
-# t_rise_hi, t_fall_hi = fwhm_limits(time_plot, E_rec_hi_a**2)
-# fwhm_hi_fs = (t_fall_hi - t_rise_hi)*t_au*1e15
-# t_rise_lo, t_fall_lo = fwhm_limits(time_plot, E_rec_lo_a**2)
-# fwhm_lo_fs = (t_fall_lo - t_rise_lo)*t_au*1e15
+#find time boundaries that define the intensity envelopes FWHM:
+t_rise_hi, t_fall_hi = fwhm_limits(time_plot, E_rec_hi_a**2)
+fwhm_hi_fs = (t_fall_hi - t_rise_hi)*t_au*1e15
+t_rise_lo, t_fall_lo = fwhm_limits(time_plot, E_rec_lo_a**2)
+fwhm_lo_fs = (t_fall_lo - t_rise_lo)*t_au*1e15
 
 #find extrema of strong field and evaluate local field:
 t_hi = find_extrema(amp_hi, phi_hi, j_om_hi, Dom_hi)
@@ -550,117 +554,148 @@ Pc_sum = 1 - Pn_sum
 #compute ionisation ratio and deviation between model and experiment:
 ratio_ion = Pc_sum/Pc_ref
 
-# #convert spectra to spectral exposure in J/(m^2 * Hz):
-# eps_0_au = e**2 / (a_0*U_au) #atomic unit of vacuum electric permittivity (F/m)
-# bins_nu_hi = bins_om_hi/(2*pi*t_au)
-# bins_nu_lo = bins_om_lo/(2*pi*t_au)
-# nu_hi = (bins_nu_hi[:-1] + bins_nu_hi[1:])/2
-# nu_lo = (bins_nu_lo[:-1] + bins_nu_lo[1:])/2
-# se_hi_au0 = int_om_hi * eps_0_au * a_0/t_au
-# se_lo_au0 = int_om_lo * eps_0_au * a_0/t_au
-# se_hi_au = amp_hi**2 * eps_0_au * a_0/t_au
-# se_lo_au = amp_lo**2 * eps_0_au * a_0/t_au
-# se_hi_si0 = se_hi_au0 * (U_au*t_au)/(a_0**2)
-# se_lo_si0 = se_lo_au0 * (U_au*t_au)/(a_0**2)
-# se_hi_si = se_hi_au * (U_au*t_au)/(a_0**2)
-# se_lo_si = se_lo_au * (U_au*t_au)/(a_0**2)
-# Dnu_hi = Dom_hi/(2*pi*t_au)
-# Dnu_lo = Dom_lo/(2*pi*t_au)
+#compute spectral exposure of strong pulse in J/(m^2 * nm):
+nu_l_hi = (om_hi - Dom_hi/2)/(2*pi*t_au)
+nu_g_hi = (om_hi + Dom_hi/2)/(2*pi*t_au)
+nu_spec_l_hi = (om_spec_hi - Dom_spec_hi/2)/(2*pi*t_au)
+nu_spec_g_hi = (om_spec_hi + Dom_spec_hi/2)/(2*pi*t_au)
+wav_l_hi = c_vac*1e9/nu_g_hi
+wav_g_hi = c_vac*1e9/nu_l_hi
+Dwav_hi = wav_g_hi - wav_l_hi
+wav_spec_l_hi = c_vac*1e9/nu_spec_g_hi
+wav_spec_g_hi = c_vac*1e9/nu_spec_l_hi
+Dwav_spec_hi = wav_spec_g_hi - wav_spec_l_hi
+pre = pi * c_vac * eps_0 * t_au * E_au**2
+se_spec_hi = pre * spec_om_hi * Dom_spec_hi/Dwav_spec_hi
+se_hi = pre * amp_hi**2 * Dom_hi/Dwav_hi
+
+#compute spectral exposure of weak pulse in J/(m^2 * nm):
+nu_l_lo = (om_lo - Dom_lo/2)/(2*pi*t_au)
+nu_g_lo = (om_lo + Dom_lo/2)/(2*pi*t_au)
+nu_spec_l_lo = (om_spec_lo - Dom_spec_lo/2)/(2*pi*t_au)
+nu_spec_g_lo = (om_spec_lo + Dom_spec_lo/2)/(2*pi*t_au)
+wav_l_lo = c_vac*1e9/nu_g_lo
+wav_g_lo = c_vac*1e9/nu_l_lo
+Dwav_lo = wav_g_lo - wav_l_lo
+wav_spec_l_lo = c_vac*1e9/nu_spec_g_lo
+wav_spec_g_lo = c_vac*1e9/nu_spec_l_lo
+Dwav_spec_lo = wav_spec_g_lo - wav_spec_l_lo
+se_spec_lo = pre * spec_om_lo * Dom_spec_lo/Dwav_spec_lo
+se_lo = pre * amp_lo**2 * Dom_lo/Dwav_lo
+
+#split frequency bands into islands:
+j_break_hi = np.where(np.diff(om_hi) > 1.5*Dom_hi)[0] + 1
+j_split_hi = np.split(np.arange(len(om_hi)), j_break_hi)
+j_break_lo = np.where(np.diff(om_lo) > 1.5*Dom_lo)[0] + 1
+j_split_lo = np.split(np.arange(len(om_lo)), j_break_lo)
+
+#set up wavelength limits:
+j_laml_hi = np.argmin(wav_spec_hi)
+j_lamg_hi = np.argmax(wav_spec_hi)
+dwav_spec_hi = abs(np.gradient(wav_spec_hi))
+lim_lam_hi = [wav_spec_hi[j_laml_hi] - dwav_spec_hi[j_laml_hi]/2,
+              wav_spec_hi[j_lamg_hi] + dwav_spec_hi[j_lamg_hi]/2]
+j_laml_lo = np.argmin(wav_spec_lo)
+j_lamg_lo = np.argmax(wav_spec_lo)
+dwav_spec_lo = abs(np.gradient(wav_spec_lo))
+lim_lam_lo = [wav_spec_lo[j_laml_lo] - dwav_spec_lo[j_laml_lo]/2,
+              wav_spec_lo[j_lamg_lo] + dwav_spec_lo[j_lamg_lo]/2]
 
 #plot spectra:
-plt.figure(figsize=(6*figfac, 6*figfac))
+fig = plt.figure(figsize=(5.5*figfac, 4*figfac))
+fig.subplots_adjust(hspace=0.1)
 
 ax1a = plt.subplot2grid((2, 1), (0, 0))
-# ax1a.set_xlim([min(om_spec), max(om_spec)])
-ax1a.set_xlim([om_hi[0] - Dom_hi/2, om_hi[-1] + Dom_hi/2])
+ax1a.set_xlim(lim_lam_hi)
 ax1b = ax1a.twinx()
-ax1a.bar(om_hi, amp_hi**2, width=Dom_hi, color='red', edgecolor='white', alpha=0.4)
-ax1a.plot(om_spec_hi, spec_om_hi, c='red', lw=1.5*figfac)
-# reps = [1] + (n_om_hi-1)*[2] + [1]
-# ax1b.plot(np.repeat(bins_om_hi, reps), np.repeat(phi_hi, 2), c='green',
-#           lw=0.75*figfac, ls='--')
-ax1b.plot(om_hi, phi_hi, color='green', lw=0.5*figfac, drawstyle='steps-mid', ls='--')
-ax1b.plot(om_hi, phi_hi, color='green', lw=0, marker='o', markersize=3*figfac,
-          markeredgewidth=1.5*figfac, markerfacecolor='none')
-ax1a.set_ylim([0, None])
-ax1a.set_ylabel('intensity (at. units)', c='red')
-ax1b.set_ylabel('phase (radians)', c='green')
-ax1a.tick_params(axis='y', colors='red')
-ax1b.tick_params(axis='y', colors='green')
+for j in range(n_om_hi):
+    wl_j = 2*pi*c_vac*1e9*t_au/(om_hi[j] + Dom_hi/2)
+    wr_j = 2*pi*c_vac*1e9*t_au/(om_hi[j] - Dom_hi/2)
+    rec_j = Rectangle((wl_j, 0), wr_j - wl_j, se_hi[j], lw=0.5*figfac, ec='black', fc='red', alpha=0.4)
+    ax1a.add_artist(rec_j)
+ax1a.plot(wav_spec_hi, se_spec_hi, c='red', lw=1.5*figfac)
+for jj in j_split_hi:
+    wl_jj = 2*pi*c_vac*1e9*t_au/(om_hi[jj] - Dom_hi/2)
+    wr_jj = 2*pi*c_vac*1e9*t_au/(om_hi[jj] + Dom_hi/2)
+    w_jj = np.ravel(np.stack((wl_jj[:, None], wr_jj[:, None]), 1))
+    phi_jj = np.repeat(phi_hi[jj], 2)
+    ax1b.plot(w_jj, phi_jj, c='green', lw=1*figfac)
+ax1a.set_ylim([0, np.max(se_spec_hi)*1.05])
+ax1a.set_ylabel(r'$H_{\mathrm{e}, \lambda, \mathrm{hi}}$ $\left(\frac{\mathrm{J}}{\mathrm{m}^2\mathrm{nm}}\right)$', c='red')
+ax1b.set_ylabel(r'$\phi_\mathrm{hi}$ (radians)', c='green')
+ax1a.xaxis.set_minor_locator(AutoMinorLocator())
+ax1a.yaxis.set_minor_locator(AutoMinorLocator())
+ax1b.yaxis.set_minor_locator(AutoMinorLocator())
+ax1a.tick_params(axis='y', colors='red', which='both')
+ax1b.tick_params(axis='y', colors='green', which='both')
+ax1a.set_xticklabels([])
 
 ax2a = plt.subplot2grid((2, 1), (1, 0))
-ax2a.set_xlim([om_lo[0] - Dom_lo/2, om_lo[-1] + Dom_lo/2])
+ax2a.set_xlim(lim_lam_lo)
 ax2b = ax2a.twinx()
-ax2a.bar(om_lo, amp_lo**2, width=Dom_lo, color='red', edgecolor='white', alpha=0.4)
-ax2a.plot(om_spec_lo, spec_om_lo, c='red', lw=1.5*figfac)
-# reps = [1] + (n_om_lo-1)*[2] + [1]
-# ax2b.plot(np.repeat(bins_om_lo, reps), np.repeat(phi_lo, 2), c='green',
-#           lw=0.75*figfac, ls='--')
-ax2b.plot(om_lo, phi_lo, color='green', lw=0.5*figfac, drawstyle='steps-mid', ls='--')
-ax2b.plot(om_lo, phi_lo, color='green', lw=0, marker='o', markersize=3*figfac,
-          markeredgewidth=1.5*figfac, markerfacecolor='none')
-ax2a.set_ylim([0, None])
-ax2a.set_xlabel('circular frequency (atomic units)')
-ax2a.set_ylabel('intensity (at. units)', c='red')
-ax2b.set_ylabel('phase (radians)', c='green')
-ax2a.tick_params(axis='y', colors='red')
-ax2b.tick_params(axis='y', colors='green')
-# plt.savefig('{}_nom={}_qlo={}_spectra.png'.format(time_id, n_om, q_lo),
-#             bbox_inches='tight', dpi=300)
+for j in range(n_om_lo):
+    wl_j = 2*pi*c_vac*1e9*t_au/(om_lo[j] + Dom_lo/2)
+    wr_j = 2*pi*c_vac*1e9*t_au/(om_lo[j] - Dom_lo/2)
+    rec_j = Rectangle((wl_j, 0), wr_j - wl_j, se_lo[j], lw=0.5*figfac, ec='black', fc='red', alpha=0.4)
+    ax2a.add_artist(rec_j)
+ax2a.plot(wav_spec_lo, se_spec_lo, c='red', lw=1.5*figfac)
+for jj in j_split_lo:
+    wl_jj = 2*pi*c_vac*1e9*t_au/(om_lo[jj] - Dom_lo/2)
+    wr_jj = 2*pi*c_vac*1e9*t_au/(om_lo[jj] + Dom_lo/2)
+    w_jj = np.ravel(np.stack((wl_jj[:, None], wr_jj[:, None]), 1))
+    phi_jj = np.repeat(phi_lo[jj], 2)
+    ax2b.plot(w_jj, phi_jj, c='green', lw=1*figfac)
+ax2a.set_ylim([0, np.max(se_spec_lo)*1.05])
+ax2a.set_xlabel(r'$\lambda$ (nm)')
+ax2a.set_ylabel(r'$H_{\mathrm{e}, \lambda, \mathrm{lo}}$ $\left(\frac{\mathrm{J}}{\mathrm{m}^2\mathrm{nm}}\right)$', c='red')
+ax2b.set_ylabel(r'$\phi_\mathrm{lo}$ (radians)', c='green')
+ax2a.xaxis.set_minor_locator(AutoMinorLocator())
+ax2a.yaxis.set_minor_locator(AutoMinorLocator())
+ax2b.yaxis.set_minor_locator(AutoMinorLocator())
+ax2a.tick_params(axis='y', colors='red', which='both')
+ax2b.tick_params(axis='y', colors='green', which='both')
 
 #plot TIPTOE trace comparison along with reconstructed electric field:
-chi, eta, zeta = chietazeta(np.append(phi_hi, phi_lo))
-print('total optimisation target:', round(chi + eta + zeta, 4))
+chi, q_lo_act, t_m = chiqtm(para)
 plt.figure(figsize=(6*figfac, 6*figfac))
 ax1 = plt.subplot2grid((3, 1), (0, 0))
-plt.plot(-delay*t_au*1e15, trace, lw=1*figfac, label='input')
-plt.plot(-delay*t_au*1e15, ratio_ion, lw=1*figfac, ls='--', label='reconstruction')
-# plt.plot(-delay*t_au*1e15, trace, marker='o', lw=0.5*figfac, markersize=2*figfac,
-#          markerfacecolor='white', markeredgewidth=1*figfac, ls='--', label='input')
+plt.plot(delay*t_au*1e15, trace, lw=1*figfac, c='red', alpha=0.5, label='input')
+plt.plot(delay*t_au*1e15, ratio_ion, lw=1*figfac, c='dodgerblue', alpha=0.5, label='reconstruction')
 plt.xlim([min(delay_fs), max(delay_fs)])
-plt.xlabel('delay (fs)')
-plt.ylabel('relative ion yield')
+plt.xlabel(r'$\tau$ (fs)')
+plt.ylabel(r'$Q$')
 plt.legend(frameon=False, loc=2)
-plt.text(0.83, 0.94, r'$\chi = {}$'.format(round(chi, 4)),
-          ha='left', va='top', transform=ax1.transAxes)
+plt.text(0.98, 0.94, r'$\chi = {}$'.format(round(chi, 4)),
+          ha='right', va='top', transform=ax1.transAxes)
 ax1.xaxis.set_minor_locator(AutoMinorLocator())
 
 ax2 = plt.subplot2grid((3, 1), (1, 0))
-# plt.fill_between(time_plot*t_au*1e15, -E_rec_hi_a, E_rec_hi_a, lw=0,
-#                  color='red', alpha=0.2)
-# plt.plot(time_plot*t_au*1e15, E_rec_hi, lw=4.5*figfac, c='white')
-plt.plot(time_plot*t_au*1e15, E_rec_hi, lw=1*figfac, c='red')
-plt.plot(time_plot*t_au*1e15, -E_rec_hi_a, lw=0.5*figfac, c='red')
-plt.plot(time_plot*t_au*1e15, E_rec_hi_a, lw=0.5*figfac, c='red')
-# plt.axvline(t_rise_hi*t_au*1e15, c='black', lw=0.5*figfac, ls='--')
-# plt.axvline(t_fall_hi*t_au*1e15, c='black', lw=0.5*figfac, ls='--')
+plt.plot(-time_plot*t_au*1e15, E_rec_hi, lw=1*figfac, c='red')
+plt.plot(-time_plot*t_au*1e15, -E_rec_hi_a, lw=0.5*figfac, c='red')
+plt.plot(-time_plot*t_au*1e15, E_rec_hi_a, lw=0.5*figfac, c='red')
+plt.axvline(-t_rise_hi*t_au*1e15, c='black', lw=0.5*figfac, ls='--')
+plt.axvline(-t_fall_hi*t_au*1e15, c='black', lw=0.5*figfac, ls='--')
 plt.xlim([min(delay_fs), max(delay_fs)])
-plt.ylabel(r'$\epsilon_\mathrm{hi}$ (atomic units)')
+plt.ylabel(r'$\epsilon_\mathrm{hi}$ (at. units)')
 ax2.xaxis.set_minor_locator(AutoMinorLocator())
-# plt.text(0.01, 0.94, r'$\mathrm{FWHM}_I = ' + str(round(fwhm_hi_fs, 2)) + r'$ fs',
-#          ha='left', va='top', transform=ax2.transAxes)
-plt.text(0.83, 0.94, r'$\zeta = {}$'.format(round(zeta, 4)),
-          ha='left', va='top', transform=ax2.transAxes)
+plt.text(0.01, 0.94, r'$\mathrm{FWHM}_I = ' + str(round(fwhm_hi_fs, 1)) + r'$ fs',
+         ha='left', va='top', transform=ax2.transAxes)
+plt.text(0.98, 0.94, r'$\left<t\right>_\mathrm{hi} = $' + '${}$ fs'.format(round(t_m*t_au*1e15, 2)),
+          ha='right', va='top', transform=ax2.transAxes)
 
 ax3 = plt.subplot2grid((3, 1), (2, 0))
-# plt.fill_between(time_plot*t_au*1e15, -E_rec_lo_a, E_rec_lo_a, lw=0,
-                 # color='dodgerblue', alpha=0.2)
-# plt.plot(time_plot*t_au*1e15, E_rec_lo, lw=4.5*figfac, c='white')
-plt.plot(time_plot*t_au*1e15, E_rec_lo, lw=1*figfac, c='dodgerblue')
-plt.plot(time_plot*t_au*1e15, -E_rec_lo_a, lw=0.5*figfac, c='dodgerblue')
-plt.plot(time_plot*t_au*1e15, E_rec_lo_a, lw=0.5*figfac, c='dodgerblue')
-# plt.axvline(t_rise_lo*t_au*1e15, c='black', lw=0.5*figfac, ls='--')
-# plt.axvline(t_fall_lo*t_au*1e15, c='black', lw=0.5*figfac, ls='--')
+plt.plot(-time_plot*t_au*1e15, E_rec_lo, lw=1*figfac, c='dodgerblue')
+plt.plot(-time_plot*t_au*1e15, -E_rec_lo_a, lw=0.5*figfac, c='dodgerblue')
+plt.plot(-time_plot*t_au*1e15, E_rec_lo_a, lw=0.5*figfac, c='dodgerblue')
+plt.axvline(-t_rise_lo*t_au*1e15, c='black', lw=0.5*figfac, ls='--')
+plt.axvline(-t_fall_lo*t_au*1e15, c='black', lw=0.5*figfac, ls='--')
 plt.xlim([min(delay_fs), max(delay_fs)])
-plt.xlabel('time (fs)')
-plt.ylabel(r'$\epsilon_\mathrm{lo}$ (atomic units)')
+plt.xlabel(r'$-t$ (fs)')
+plt.ylabel(r'$\epsilon_\mathrm{lo}$ (at. units)')
 ax3.xaxis.set_minor_locator(AutoMinorLocator())
-# plt.text(0.01, 0.94, r'$\mathrm{FWHM}_I = ' + str(round(fwhm_lo_fs, 2)) + r'$ fs',
-#          ha='left', va='top', transform=ax3.transAxes)
-plt.text(0.83, 0.94, r'$\eta = {}$'.format(round(eta, 4)),
-          ha='left', va='top', transform=ax3.transAxes)
+plt.text(0.01, 0.94, r'$\mathrm{FWHM}_I = ' + str(round(fwhm_lo_fs, 1)) + r'$ fs',
+         ha='left', va='top', transform=ax3.transAxes)
+plt.text(0.98, 0.94, r'$q = $' + '${}$'.format(round(q_lo_act, 2)),
+          ha='right', va='top', transform=ax3.transAxes)
 plt.tight_layout()
-# plt.savefig('{}_nom={}_qlo={}_traces+fields.png'.format(time_id, n_om, q_lo),
-#             bbox_inches='tight', dpi=300)
-
 plt.show()
