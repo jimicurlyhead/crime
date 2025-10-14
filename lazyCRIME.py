@@ -1,26 +1,34 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+#requirements:
+#   * larger delay values correspond to the weak pulse arriving later
+#   * strong and weak pulse have identical waveforms (except for a scalar phase offset)
+
+# =============================================================================
+# USER INPUT:
+# =============================================================================
+
+#define data identifier for HDF5 file with input data:
+identifier  = 'inputexample'
+
+#define retrieval parameters:
+species     = 'He' #define atomic/molecular target
+frac        = 0.998 #fraction of total fluence to be covered by frequency grid
+q_set       = 0.90 #minimum fraction of weak pulse's fluence within delay/time window
+n_om0       = 10 #number of frequency grid points
+n_co        = 3 #number of available processors for multithreading
+
+# =============================================================================
+# LOAD MODULES:
+# =============================================================================
+
 import numpy as np
-from numpy import pi, sin, cos, sqrt, log, exp
+from numpy import pi, sin, cos, sqrt, exp
 import h5py
 from scipy.interpolate import interp1d
 from scipy.optimize import differential_evolution
 from datetime import datetime
-import sys
-
-#requirements:
-#   * shapes of strong and weak fields' waveforms are identical
-#   * larger delay values correspond to the weak pulse arriving later
-
-#define time identifier of measurement:
-time_id      = '240416_1458_2'
-
-#define retrieval parameters:
-species      = 'Ne'
-frac         = 0.998 #fraction of total fluence to be covered by frequency grid
-n_om0        = 20 #number of frequency bands used for waveform retrieval
-n_co         = 127 #number of available processors for multithreading
 
 # =============================================================================
 # PHYSICAL CONSTANTS:
@@ -42,29 +50,24 @@ E_au    = U_au/(e*a_0) #atomic unit of electric field strength (V/m)
 a_au    = (e*a_0)**2 / U_au #atomic unit of electric polarisability (C^2*m^2/J)
 D2au    = 0.3934303 #1 Debye in atomic units
 
-#set up dictionary of field-free vertical ionisation energies in eV:
-d_IE0_eV = {'He':24.587, 'Ne':21.565, 'Ar':15.759, 'N2':15.58, 'H2O':12.600}
+#set up dictionary of field-free vertical ionisation energies (eV):
+d_IE0_eV = {'He':24.587, 'Ne':21.565, 'Ar':15.759, 'N2':15.58}
 
 # =============================================================================
 # LOAD EXPERIMENTAL DATA:
 # =============================================================================
 
 #set up name for snapshot file:
-file_snp = 'lazycrime_{}_{}_nom={}_frac={}.snp'.format(time_id, species, n_om0, frac)
+file_snp = 'lazycrime_{}_{}_nom={}_frac={}_qlo={}.snp'.format(identifier, species, n_om0, frac, q_set)
 
-#initialise wall clock time:
-start = datetime.now()
-now = datetime.now()
-
-#load TIPTOE data:
-file = 'tiptoe_{}.h5'.format(time_id)
+#load input data:
+file = '{}.h5'.format(identifier)
 with h5py.File(file, 'r') as h5:
-    delay_fs = h5['target delays (fs)'][:]
-    trace = h5['signal {}+'.format(species)][:]
-    # trace = h5['rel. yield N2+'][:]
-    wav_spec = h5['wavelengths weak pulse (nm)'][:]
-    spec = h5['spectral intensities weak pulse (arb. u.)'][:]
-
+    delay_fs = h5['delay (fs)'][:]
+    trace = h5['rel. yield {}+'.format(species)][:]
+    wav_spec = h5['wavelength weak pulse (nm)'][:]
+    spec = h5['spectral intensity weak pulse (arb. u.)'][:]
+    
 #centre delay frame:
 delay_fs -= np.mean(delay_fs)
     
@@ -92,7 +95,7 @@ def frac_indices(tr, frac):
     tr   : one-dimensional distribution
     frac : fraction of the cumulative sum to be included [0; 1]'''
     
-    #sort indices folloowing decending trace values and compute cumulative sum:
+    #sort indices following decending trace values and compute cumulative sum:
     j_sort = np.argsort(tr)[::-1]
     cs = np.cumsum(tr[j_sort])/np.sum(tr)
     
@@ -111,6 +114,8 @@ j_sort = np.argsort(om_spec)
 om_spec = om_spec[j_sort]
 spec_om = spec_om[j_sort]
 dom_spec = np.gradient(om_spec)
+wav_spec = wav_spec[j_sort]
+spec = spec[j_sort]
 
 #identify wavelength regions that amount to majority of fluence:
 j_maj = frac_indices(spec_om*dom_spec, frac)
@@ -139,13 +144,12 @@ n_om = len(om)
 spec_om_maj = spec_om_maj[j_om]
 
 #compute spectral amplitudes with normalised fluence:
+Dom_spec = np.gradient(om_spec)
 amp = sqrt(spec_om_maj/(Dom*np.sum(spec_om_maj)))
+spec_om /= np.sum(Dom_spec*spec_om)
 
-#convert compressed spectrum back to wavelength (nm):
-wav = 2*pi*c_vac*1e9*t_au/om
-spec_wav_maj = (spec_om_maj*om**2)/(2*pi*c_vac*t_au)
-
-#compute mean optical period:
+#compute mean frequency and optical period:
+om0 = np.sum(om*amp**2)/np.sum(amp**2)
 Tm = 2*pi*np.sum(amp**2 / om)/np.sum(amp**2)
 
 # =============================================================================
@@ -153,22 +157,50 @@ Tm = 2*pi*np.sum(amp**2 / om)/np.sum(amp**2)
 # =============================================================================
 
 
-def efield_re(time, om_i, dom, amp_i, phi_i):
+def efield_c(time, om_i, Dom, amp_i, phi_i):
     '''composes the time domain representation of a laser-electric field in its
-    real form based on its properties in the frequency domain. the spectral
-    amplitudes and phases are assumed to be constant across the frequency bins.
-    returns field in real form
+    complex form based on its properties in the frequency domain. the spectral
+    amplitudes and phases are assumed to be constant within the frequency
+    increments defined by om_i and Dom.
+    returns field in complex form
     
     time  : time grid in atomic units, shape (n_t, n_tau)
-    om_i  : circular frequency grid in atomic units, shape (n_om,)
-    dom   : circular frequency increment in atomic units, scalar
+    om_i  : circular frequency grid in ascending order, shape (n_om,)
+    Dom   : increment of circular frequency grid, scalar
     amp_i : spectral amplitudes in atomic units, shape (n_om,)
     phi_i : spectral phases in radians, shape (n_om,)'''
     
     #set up three-dimensional variables:
     t3 = time[..., None]
-    ol3 = om_i[None, None] - dom/2
-    oh3 = om_i[None, None] + dom/2
+    ol3 = om_i[None, None] - Dom/2
+    oh3 = om_i[None, None] + Dom/2
+    a3 = amp_i[None, None]
+    p3 = phi_i[None, None]
+    
+    #compose electric field in the time domain in complex form:
+    field_om = a3*1j * (exp(1j*(p3 - oh3*t3)) - exp(1j*(p3 - ol3*t3))) / t3
+    field = np.sum(field_om, -1)
+    
+    return field
+
+
+def efield_re(time, om_i, Dom, amp_i, phi_i):
+    '''composes the time domain representation of a laser-electric field in its
+    real form based on its properties in the frequency domain. the spectral
+    amplitudes and phases are assumed to be constant within the frequency
+    increments defined by om_i and Dom.
+    returns field in real form
+    
+    time  : time grid in atomic units, shape (n_t, n_tau)
+    om_i  : circular frequency grid in ascending order, shape (n_om,)
+    Dom   : increment of circular frequency grid, scalar
+    amp_i : spectral amplitudes in atomic units, shape (n_om,)
+    phi_i : spectral phases in radians, shape (n_om,)'''
+    
+    #set up three-dimensional variables:
+    t3 = time[..., None]
+    ol3 = om_i[None, None] - Dom/2
+    oh3 = om_i[None, None] + Dom/2
     a3 = amp_i[None, None]
     p3 = phi_i[None, None]
     
@@ -179,22 +211,9 @@ def efield_re(time, om_i, dom, amp_i, phi_i):
     return field
 
 
-#prepare indices for Fourier-Frobenius companion matrix:
-n_om_c = j_om[-1]
-j_eye = np.arange(2*n_om_c - 1, dtype=int)
-k_eye = np.arange(1, 2*n_om_c, dtype=int)
-v_eye = np.ones(2*n_om_c-1)
-j_bot = np.ones(2*n_om-1, dtype=int) * (2*n_om_c-1)
-k_bot1 = n_om_c - j_om
-k_bot2 = n_om_c + j_om[:-1]
-k_bot = np.append(k_bot1, k_bot2)
-j_tot = np.append(j_eye, j_bot)
-k_tot = np.append(k_eye, k_bot)
-
-
-def find_extrema(amp, phi):
+def find_extrema(amp, phi, j_om, Dom):
     '''determines the time-domain extreme value positions of the given electric
-    field from its frequency-domain properties by finding the eigenvalues of
+    field from its frequency-domain properties, by finding the eigenvalues of
     the underlying trigonometric polynomial's companion matrix. [1]
     the frequency grid of the polynomial is required to be equidistant and
     rooted at zero.
@@ -202,7 +221,22 @@ def find_extrema(amp, phi):
     [1] J. P. Boyd, J. Eng. Math. 56, 203--219 (2006)
     
     amp  : spectral amplitudes, shape (n_om,)
-    phi  : spectral phases in radians, shape (n_om,)'''
+    phi  : spectral phases in radians, shape (n_om,)
+    j_om : indices of zero-centred circular frequency grid, shape (n_om,)
+    Dom  : increment of zero-centred circular frequency grid, scalar'''
+    
+    #prepare indices for Fourier-Frobenius companion matrix:
+    n_om_c = j_om[-1]
+    j_eye = np.arange(2*n_om_c - 1, dtype=int)
+    k_eye = np.arange(1, 2*n_om_c, dtype=int)
+    v_eye = np.ones(2*n_om_c-1)
+    n_om = len(j_om)
+    j_bot = np.ones(2*n_om-1, dtype=int) * (2*n_om_c-1)
+    k_bot1 = n_om_c - j_om
+    k_bot2 = n_om_c + j_om[:-1]
+    k_bot = np.append(k_bot1, k_bot2)
+    j_tot = np.append(j_eye, j_bot)
+    k_tot = np.append(k_eye, k_bot)
     
     #set up Fourier-Frobenius companion matrix:
     a_j = amp * sin(phi) * j_om
@@ -234,8 +268,8 @@ def rate_adk(E_abs, IE):
     [1] X. M. Tong and C. D. Lin, J. Phys. B 38, 2593--2600 (2005)
     [2] X. M. Tong et al., Phys. Rev. A 66, 033402 (2002)
     
-    E_abs : absolute electric field strength (atomic units)
-    IE    : ionisation energy (atomic units)'''
+    E_abs : absolute electric field strength in atomic units, shape (n_t,)
+    IE    : ionisation energy in atomic units, scalar'''
             
     #get indices for absolute electric field strengths greater than zero:
     b_g0 = E_abs > 0
@@ -259,35 +293,49 @@ def rate_adk(E_abs, IE):
 # WAVEFORM RETRIEVAL:
 # =============================================================================
 
+#set up time increments for intermediate file saves:
+dt = 30 #save interval in seconds
+start = datetime.now()
+now = datetime.now()
+
 
 def minfunc(para):
     'computes deviation between measured TIPTOE trace and model'
     
-    #parse model parameters:
-    delay0, F_hi, ratio_F = para[:3]
-    phi = para[3:]
+    #parse spectral phases and delay/phase offset:
+    t0_lo, off_lo, F_hi, ratio_F = para[:4]
+    phi_hi = np.array(para[4:])
+    phi_lo = phi_hi + (om - om0)*t0_lo + off_lo
     
     #derive absolute amplitudes of strong and weak pulse:
     amp_hi = amp * sqrt(F_hi)
     amp_lo = amp_hi/sqrt(ratio_F)
     
-    #compute offset delay grid:
-    delay_o = delay - delay0
-    
     #find extrema of strong field:
-    t_hi = find_extrema(amp_hi, phi)
+    t_hi = find_extrema(amp_hi, phi_hi, j_om, Dom)
     
-    #evaluate field extrema:
-    E_hi = efield_re(t_hi[:, None], om, Dom, amp_hi, phi)[:, 0]
+    #find extrema of weak field and discard extrema outside delay window:
+    t_lo = find_extrema(amp_lo, phi_lo, j_om, Dom)
+    b_win_lo = abs(t_lo) < 0.5*Rt
+    t_lo = t_lo[b_win_lo]
+    
+    #evaluate fields at extrema:
+    E_hi = efield_re(t_hi[:, None], om, Dom, amp_hi, phi_hi)[:, 0]
+    E_lo = efield_re(t_lo[:, None], om, Dom, amp_lo, phi_lo)[:, 0]
+    
+    #compute fraction of weak pulse within observation window:
+    E_los = E_lo**2
+    It_cen = 0.5*np.sum((E_los[:-1] + E_los[1:])*np.diff(t_lo))
+    eta = max(q_set - It_cen/(2*pi*F_hi/ratio_F), 0)/q_set
     
     #assess whether strong pulse triggers computable amount of ionisation:
     wi_hi = rate_adk(abs(E_hi), IE0)
     if 1 - np.prod(1 - wi_hi) > 0:
         
         #discard positive minima and negative maxima:
-        d2E_c = cos(phi[None]) * cos(j_om[None]*Dom*t_hi[:, None])
-        d2E_s = sin(phi[None]) * sin(j_om[None]*Dom*t_hi[:, None])
-        d2E_hi = -np.sum(amp[None] * (d2E_c + d2E_s) * (j_om[None]*Dom)**2, 1)
+        d2E_c = cos(phi_hi[None]) * cos(j_om[None]*Dom*t_hi[:, None])
+        d2E_s = sin(phi_hi[None]) * sin(j_om[None]*Dom*t_hi[:, None])
+        d2E_hi = -np.sum(amp_hi[None] * (d2E_c + d2E_s) * (j_om[None]*Dom)**2, 1)
         b_keep = E_hi*d2E_hi < 0
         t_hi = t_hi[b_keep]
         E_hi = E_hi[b_keep]
@@ -313,8 +361,8 @@ def minfunc(para):
         t_trz = np.sort(t_trz2[b_l & b_r])
     
         #evaluate electric fields on field-adapted grid:
-        E_hi_trz = efield_re(t_trz[:, None], om, Dom, amp_hi, phi)
-        E_lo_trz = efield_re(t_trz[:, None] - delay_o[None], om, Dom, amp_lo, phi)
+        E_hi_trz = efield_re(t_trz[:, None], om, Dom, amp_hi, phi_hi)
+        E_lo_trz = efield_re(t_trz[:, None] - delay[None], om, Dom, amp_lo, phi_lo)
         
         #compute instantaneous ionisation rates:
         wi_ref = rate_adk(abs(E_hi_trz[:, 0]), IE0)
@@ -336,52 +384,27 @@ def minfunc(para):
         t_m = np.sum(t_trz * wi_ref)/np.sum(wi_ref)
         zeta = abs(t_m)/(0.5*Rt)
         
-        return chi + zeta
+        return chi + eta + zeta
         
     else:
         
-        #compute temporal standard deviation of intensity envelope:
+        #compute fraction of strong pulse within observation window:
         E_his = E_hi**2
-        S_his = np.sum(E_his)
-        t_hi_m = np.sum(E_his*t_hi)/S_his
-        t_hi_ms = np.sum(E_his*t_hi**2)/S_his
-        std = sqrt(t_hi_ms - t_hi_m**2)
+        It_cen = 0.5*np.sum((E_his[:-1] + E_his[1:])*np.diff(t_hi))
+        mu = 4*(2 - It_cen/(2*pi*F_hi))
         
-        #compute intensity width relative to observation window:
-        mu = std*2*sqrt(2*log(2))/Rt
+        #compute mean time of strong pulse's intensity envelope:
+        t_m = np.sum(t_hi * E_his)/np.sum(E_his)
+        zeta = abs(t_m)/(0.5*Rt)
         
-        return max(mu, 1)
+        return mu + eta + zeta
     
     
-def show_fields(tau0, F_hi, ratio_F):
-    '''plots laser-electric field of strong pulse for given set of parameters,
-    assuming flat spectral phases'''
-    
-    #compute electric field:
-    t = np.arange(-15e-15/t_au, 15e-15/t_au + 1, 1)
-    phi = np.zeros(n_om)
-    amp_hi = amp * sqrt(F_hi)
-    amp_lo = amp_hi/sqrt(ratio_F)
-    E_hi = efield_re(t, om, Dom, amp_hi, phi)[0]
-    E_lo = efield_re(t, om, Dom, amp_lo, phi)[0]
-    
-    #plot fields:
-    import matplotlib.pyplot as plt
-    plt.figure(figsize=(3, 2))
-    plt.subplot2grid((2, 1), (0, 0))
-    plt.plot(t*t_au*1e15, E_hi)
-    plt.subplot2grid((2, 1), (1, 0))
-    plt.plot(t*t_au*1e15, E_lo)
-    plt.show()
-    
-
 def callback(xk, convergence):
     global now
     
     delta = (datetime.now() - now).total_seconds()
-    if delta > 20:
-                
-        #save current parameter set:
+    if delta > dt:
         header = 'status     : running' + '\n'
         header += 'runtime    : {}'.format(datetime.now() - start) + '\n'
         header += 'minfunc(x) : {}'.format(minfunc(xk)) + '\n'
@@ -396,13 +419,6 @@ def callback(xk, convergence):
         with open(file_snp, 'w') as txt:
             txt.write(header + para)
         now = datetime.now()
-        
-        #update display of total optimisation target:
-        ot = minfunc(xk)
-        sys.stdout.write('\r')
-        sys.stdout.write('   chi + zeta  : {}'.format(round(ot, 4)))
-        sys.stdout.flush()
-        now = datetime.now()
 
 
 def extract_field(para0=None):
@@ -415,11 +431,11 @@ def extract_field(para0=None):
     para0 : initial guess for parameter vector'''
     
     #set up boundaries for parameter optimisation:
-    bounds_tau0 = (-Rt/2, Rt/2)
-    bounds_F = (1e-3, 1)
-    bounds_rat = (100, 100000)
-    bounds_phi = (0, 2*pi)
-    bounds = [bounds_tau0] + [bounds_F] + [bounds_rat] + n_om*[bounds_phi]
+    b_t0 = (-Rt/2, Rt/2)
+    b_phi0 = (0, 2*pi)
+    b_F = (1e-3, 1)
+    b_rat = (100, 100000)
+    bounds = [b_t0] + [b_phi0] + [b_F] + [b_rat] + n_om*[(0, 2*pi)]
     
     #find global optimum of electric field parameters:
     res = differential_evolution(minfunc, bounds, disp=False, x0=para0,
@@ -433,32 +449,19 @@ def extract_field(para0=None):
 if __name__ == "__main__":
     
     #extract electric field from TIPTOE trace:
-    print('running waveform retrieval with {} processor(s)...'.format(n_co))
-    print('   n_om        : {}'.format(n_om))
-    print('   frac        : {}'.format(frac))
-    print('   species     : {}'.format(species))
-    print('   output file : {}'.format(file_snp))
     result = extract_field()
     
     #save results:
-    header = 'status     : finished' + '\n'
+    header = 'status     : {}'.format(result.message) + '\n'
     header += 'runtime    : {}'.format(datetime.now() - start) + '\n'
     header += 'minfunc(x) : {}'.format(minfunc(result.x)) + '\n'
-    para = '[{}'.format(result.x[0])
+    par = '[{}'.format(result.x[0])
     for j,x in enumerate(result.x[1:]):
         if not (j+1)%3:
             sep = '\n'
         else:
             sep = ' '
-        para += ',{}{}'.format(sep, x)
-    para += ']\n'
+        par += ',{}{}'.format(sep, x)
+    par += ']\n'
     with open(file_snp, 'w') as txt:
-        txt.write(header + para)
-        
-    #update display of total optimisation target:
-    ot = minfunc(result.x)
-    sys.stdout.write('\r')
-    sys.stdout.write('   chi + zeta  : {}'.format(round(ot, 4)))
-    sys.stdout.flush()
-    now = datetime.now()
-    print('\n' + '   finished')
+        txt.write(header + par)
