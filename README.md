@@ -12,13 +12,13 @@ With inputexample.h5 we provide exemplary input data to demonstrate the feed-in 
 
 Here is a brief explanation of the various input parameters:
 
-identifier : The name of the .h5 file containing the input data like spectra and fluence values.
+identifier : The name of the .h5 file containing the input data -- pump-probe trace, spectra and fluence values.
 
 species : Abbreviation of the atomic/molecular target that was strong-field-ionized in the underlying pump-probe measurement. It is used to assign the (vertical) ionisation energy (add further values to d_IE0_eV if needed).
 
 frac : Fraction of the total fluence that should be kept when setting up the frequency grid. A value close to 1 (like 0.998) enables an efficient use of parameter space and at the same time ensures that the majority of the input spectrum will be covered by the reconstruction grid. You can play a bit with the *_results.py files (check_input=True) to see how the input spectrum is mapped onto the frequency grid for the reconstruction.
 
-n_om0 : Desired number of frequency bands. The same number will be applied for both waveforms. This number defines the size of the parameter space (CRIME: 2*n_om0, twinCRIME: n_om0 + 2, lazyCRIME: n_om0 + 4) and thus the time needed for a converged retrieval run, in a nonlinear way. The closer the pulses are to their transform limit, the less frequency bands will be necessary to achieve a good representation in the time domain.
+n_om0 : Desired number of frequency bands. The same number will be applied for both waveforms. This number defines the size of the parameter space (CRIME: 2*n_om0, twinCRIME: n_om0 + 2, lazyCRIME: n_om0 + 4) and thus the time needed for a converged retrieval run. The closer the pulses are to their transform limit, the less frequency bands will be necessary to achieve a good representation in the time domain.
 
 q_set : Lower bound for the fraction of the weaker pulse's fluence that has to be contained within the observation time window (q). The closer q_set to the q value of the Fourier-limited pulse, the more accurate will the resulting absolute electric fields be. The lower q_set, the more freedom will the algorithm have to shift around some of the pulse's fluence in time, possibly resulting in a better reconstruction of the pump-probe trace. It is advisable to start with a value close to q of the Fourier-limited pulse and then reduce that number, if the reconstruction did provide sufficient agreement with the experimental pump-probe trace.
 
