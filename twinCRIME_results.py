@@ -17,7 +17,6 @@ species     = 'He' #define atomic/molecular target
 frac        = 0.998 #fraction of total fluence to be covered by frequency grid
 q_set       = 0.90 #minimum fraction of weak pulse's fluence within delay/time window
 n_om0       = 10 #number of frequency grid points
-n_co        = 3 #number of available processors for multithreading
 check_input = False #boolean, sets all spectral phases to 0
 
 # =============================================================================
@@ -124,6 +123,8 @@ j_sort = np.argsort(om_spec)
 om_spec = om_spec[j_sort]
 spec_om = spec_om[j_sort]
 dom_spec = np.gradient(om_spec)
+wav_spec = wav_spec[j_sort]
+spec = spec[j_sort]
 
 #compute time-integrated intensities from peak fluences (at. u.):
 Esq_f_hi = 2*F_hi/(c_vac*eps_0) / (t_au*E_au**2)
@@ -171,7 +172,8 @@ spec_om_maj_lo = spec_om_maj_lo[j_om]
 amp_hi = sqrt(spec_om_maj_hi)
 amp_lo = sqrt(spec_om_maj_lo)
 
-#compute mean optical period:
+#compute mean frequency and optical period:
+om0 = np.sum(om*amp_hi**2)/np.sum(amp_hi**2)
 Tm_hi = 2*pi*np.sum(amp_hi**2 / om)/np.sum(amp_hi**2)
 
 #prepare time-integrated intensities:
@@ -328,7 +330,7 @@ def chiqtm(para):
     #parse spectral phases and delay/phase offset:
     t0_lo, off_lo = para[:2]
     phi_hi = np.array(para[2:])
-    phi_lo = phi_hi + om*t0_lo + off_lo
+    phi_lo = phi_hi + (om - om0)*t0_lo + off_lo
     
     #find extrema of strong field:
     t_hi = find_extrema(amp_hi, phi_hi, j_om, Dom)
@@ -461,7 +463,7 @@ else:
 #parse spectral phases and delay/phase offset:
 t0_lo, off_lo = para[:2]
 phi_hi = np.array(para[2:])
-phi_lo = phi_hi + om*t0_lo + off_lo
+phi_lo = phi_hi + (om - om0)*t0_lo + off_lo
 
 #unwrap spectral phases:
 phi_hi = np.unwrap(phi_hi)
@@ -557,18 +559,24 @@ se_lo = pre * amp_lo**2 * Dom/Dwav
 j_break = np.where(np.diff(om) > 1.5*Dom)[0] + 1
 j_split = np.split(np.arange(len(om)), j_break)
 
-#plot spectra:
+#set up wavelength limits:
+j_lamlo = np.argmin(wav_spec)
+j_lamhi = np.argmax(wav_spec)
 dwav_spec = abs(np.gradient(wav_spec))
+lim_lam = [wav_spec[j_lamlo] - dwav_spec[j_lamlo]/2,
+           wav_spec[j_lamhi] + dwav_spec[j_lamhi]/2]
+
+#plot spectra:
 fig = plt.figure(figsize=(5.5*figfac, 4*figfac))
 fig.subplots_adjust(hspace=0.1)
 
 ax1a = plt.subplot2grid((2, 1), (0, 0))
-ax1a.set_xlim(wav_spec[-1] + dwav_spec[-1]/2, wav_spec[0] - dwav_spec[0]/2)
+ax1a.set_xlim(lim_lam)
 ax1b = ax1a.twinx()
 for j in range(n_om):
     wl_j = 2*pi*c_vac*1e9*t_au/(om[j] + Dom/2)
     wr_j = 2*pi*c_vac*1e9*t_au/(om[j] - Dom/2)
-    rec_j = Rectangle((wl_j, 0), wr_j - wl_j, se_hi[j], lw=0, fc='red', alpha=0.4)
+    rec_j = Rectangle((wl_j, 0), wr_j - wl_j, se_hi[j], lw=0.5*figfac, ec='black', fc='red', alpha=0.4)
     ax1a.add_artist(rec_j)
 ax1a.plot(wav_spec, se_spec_hi, c='red', lw=1.5*figfac)
 for jj in j_split:
@@ -588,12 +596,12 @@ ax1b.tick_params(axis='y', colors='green', which='both')
 ax1a.set_xticklabels([])
 
 ax2a = plt.subplot2grid((2, 1), (1, 0))
-ax2a.set_xlim(wav_spec[-1] + dwav_spec[-1]/2, wav_spec[0] - dwav_spec[0]/2)
+ax2a.set_xlim(lim_lam)
 ax2b = ax2a.twinx()
 for j in range(n_om):
     wl_j = 2*pi*c_vac*1e9*t_au/(om[j] + Dom/2)
     wr_j = 2*pi*c_vac*1e9*t_au/(om[j] - Dom/2)
-    rec_j = Rectangle((wl_j, 0), wr_j - wl_j, se_lo[j], lw=0, fc='red', alpha=0.4)
+    rec_j = Rectangle((wl_j, 0), wr_j - wl_j, se_lo[j], lw=0.5*figfac, ec='black', fc='red', alpha=0.4)
     ax2a.add_artist(rec_j)
 ax2a.plot(wav_spec, se_spec_lo, c='red', lw=1.5*figfac)
 for jj in j_split:

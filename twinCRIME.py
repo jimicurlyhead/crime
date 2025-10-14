@@ -117,6 +117,8 @@ j_sort = np.argsort(om_spec)
 om_spec = om_spec[j_sort]
 spec_om = spec_om[j_sort]
 dom_spec = np.gradient(om_spec)
+wav_spec = wav_spec[j_sort]
+spec = spec[j_sort]
 
 #compute time-integrated intensities from peak fluences (at. u.):
 Esq_f_hi = 2*F_hi/(c_vac*eps_0) / (t_au*E_au**2)
@@ -164,7 +166,8 @@ spec_om_maj_lo = spec_om_maj_lo[j_om]
 amp_hi = sqrt(spec_om_maj_hi)
 amp_lo = sqrt(spec_om_maj_lo)
 
-#compute mean optical period:
+#compute mean frequency and optical period:
+om0 = np.sum(om*amp_hi**2)/np.sum(amp_hi**2)
 Tm_hi = 2*pi*np.sum(amp_hi**2 / om)/np.sum(amp_hi**2)
 
 #prepare time-integrated intensities:
@@ -326,7 +329,7 @@ def minfunc(para):
     #parse spectral phases and delay/phase offset:
     t0_lo, off_lo = para[:2]
     phi_hi = np.array(para[2:])
-    phi_lo = phi_hi + om*t0_lo + off_lo
+    phi_lo = phi_hi + (om - om0)*t0_lo + off_lo
     
     #find extrema of strong field:
     t_hi = find_extrema(amp_hi, phi_hi, j_om, Dom)
