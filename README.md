@@ -1,6 +1,6 @@
 This repository accomodates the files for laser-electric waveform retrieval based on the CRIME algorithm. Details on the algorithm itself and on the experimental implementation can be found in this article:
 
-  J. Wiese, K. Brupbacher et al., "Universal and waveform-resolving dual pulse reconstruction through interferometric strong-field ionization", Optics Express 32(27), pp. 48734-48747 (2024), https://doi.org/10.1364/OE.534553
+J. Wiese, K. Brupbacher et al., "Universal and waveform-resolving dual pulse reconstruction through interferometric strong-field ionization", Optics Express 32(27), pp. 48734-48747 (2024), https://doi.org/10.1364/OE.534553
   
 The project is written purely in Python, using NumPy and SciPy libraries, and includes three different variants of the CRIME algorithm, each with individual input requirements and resulting output quality. For each of the three variants (CRIME, twinCRIME, lazyCRIME), there is an equivalent *_results.py file provided that serves a twofold purpose: it visualises the results of a running/finished waveform retrieval and it enables the user to check the processing of the input data and parameters. All variants of the algorithm reconstruct the waveform-resolved laser-electric fields of both pulses involved in the underlying pump-probe measurement.
 
@@ -11,5 +11,7 @@ Both twinCRIME and lazyCRIME assume pulse pairs with identical waveforms (apart 
 With inputexample.h5 we provide exemplary input data to demonstrate the feed-in of measured data. All three variants of the algorithm can be tested with this sample input. For low numbers of frequency bands (n_om <= 10), they should deliver converged waveforms within minutes when run on a regular workstation computer. For reconstruction runs with much larger frequency grids, it is advisable to use computer architecture that allows for multithreading with dozens of cores. The file CRIME_monitor.py prints a summary of all running reconstruction jobs, based on the snapshot files that contain the momentarily best solutions.
 
 Here is a brief explanation of the various input parameters:
-  identifier : The name of the .h5 file containing the input data like spectra and fluence values.
-  species    : Abbreviation of the atomic/molecular target that was strong-field-ionized in the underlying pump-probe measurement. It is used to assign the (vertical) ionisation energy.
+
+identifier : The name of the .h5 file containing the input data like spectra and fluence values.
+
+species : Abbreviation of the atomic/molecular target that was strong-field-ionized in the underlying pump-probe measurement. It is used to assign the (vertical) ionisation energy.
