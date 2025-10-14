@@ -1,25 +1,34 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+#requirements:
+#   * larger delay values correspond to the weak pulse arriving later
+#   * strong and weak pulse have identical waveforms (except for a scalar phase offset)
+
+# =============================================================================
+# USER INPUT:
+# =============================================================================
+
+#define data identifier for HDF5 file with input data:
+identifier  = 'inputexample'
+
+#define retrieval parameters:
+species     = 'He' #define atomic/molecular target
+frac        = 0.998 #fraction of total fluence to be covered by frequency grid
+q_set       = 0.90 #minimum fraction of weak pulse's fluence within delay/time window
+n_om0       = 10 #number of frequency grid points
+n_co        = 3 #number of available processors for multithreading
+
+# =============================================================================
+# LOAD MODULES:
+# =============================================================================
+
 import numpy as np
 from numpy import pi, sin, cos, sqrt, exp
 import h5py
 from scipy.interpolate import interp1d
 from scipy.optimize import differential_evolution
 from datetime import datetime
-
-#requirements:
-#   * larger delay values correspond to the weak pulse arriving later
-
-#define time identifier of measurement:
-time_id     = '250902_1736_6'
-
-#define retrieval parameters:
-species     = 'N2'
-frac        = 0.998 #fraction of total fluence to be covered by frequency grid
-q_lo        = 0.95 #minimum fraction of weak pulse's fluence within delay frame
-n_om0       = 20
-n_co        = 128 #number of available processors for multithreading
 
 # =============================================================================
 # PHYSICAL CONSTANTS:
@@ -41,23 +50,23 @@ E_au    = U_au/(e*a_0) #atomic unit of electric field strength (V/m)
 a_au    = (e*a_0)**2 / U_au #atomic unit of electric polarisability (C^2*m^2/J)
 D2au    = 0.3934303 #1 Debye in atomic units
 
-#set up dictionary of field-free vertical ionisation energies in eV:
-d_IE0_eV = {'He':24.587, 'Ne':21.565, 'Ar':15.759, 'N2':15.58, 'H2O':12.600}
+#set up dictionary of field-free vertical ionisation energies (eV):
+d_IE0_eV = {'He':24.587, 'Ne':21.565, 'Ar':15.759, 'N2':15.58}
 
 # =============================================================================
 # LOAD EXPERIMENTAL DATA:
 # =============================================================================
 
 #set up name for snapshot file:
-file_snp = 'twincrime_{}_{}_nom={}_frac={}_qlo={}.snp'.format(time_id, species, n_om0, frac, q_lo)
+file_snp = 'twincrime_{}_{}_nom={}_frac={}_qlo={}.snp'.format(identifier, species, n_om0, frac, q_set)
 
-#load TIPTOE data:
-file = 'tiptoe_{}.h5'.format(time_id)
+#load input data:
+file = '{}.h5'.format(identifier)
 with h5py.File(file, 'r') as h5:
-    delay_fs = h5['target delays (fs)'][:]
+    delay_fs = h5['delay (fs)'][:]
     trace = h5['rel. yield {}+'.format(species)][:]
-    wav_spec = h5['wavelengths weak pulse (nm)'][:]
-    spec = h5['spectral intensities weak pulse (arb. u.)'][:]
+    wav_spec = h5['wavelength weak pulse (nm)'][:]
+    spec = h5['spectral intensity weak pulse (arb. u.)'][:]
     atts = dict(h5.attrs)
     F_hi = atts['peak fluence strong pulse (J/m^2)']
     F_lo = atts['peak fluence weak pulse (J/m^2)']
@@ -89,7 +98,7 @@ def frac_indices(tr, frac):
     tr   : one-dimensional distribution
     frac : fraction of the cumulative sum to be included [0; 1]'''
     
-    #sort indices folloowing decending trace values and compute cumulative sum:
+    #sort indices following decending trace values and compute cumulative sum:
     j_sort = np.argsort(tr)[::-1]
     cs = np.cumsum(tr[j_sort])/np.sum(tr)
     
@@ -164,9 +173,6 @@ It_lo = 2*pi*np.sum(amp_lo**2)*Dom
 II_hi = np.sum(amp_hi**2)
 II_lo = np.sum(amp_lo**2)
 
-#compute mean optical period:
-period_lo = np.sum((2*pi/om)*amp_lo**2)/np.sum(amp_lo**2)
-
 # =============================================================================
 # LASER-ELECTRIC FIELD AND TUNNELLING RATE:
 # =============================================================================
@@ -175,8 +181,8 @@ period_lo = np.sum((2*pi/om)*amp_lo**2)/np.sum(amp_lo**2)
 def efield_c(time, om_i, Dom, amp_i, phi_i):
     '''composes the time domain representation of a laser-electric field in its
     complex form based on its properties in the frequency domain. the spectral
-    amplitudes and phases are assumed to be constant in between the given
-    frequency bins bom_i.
+    amplitudes and phases are assumed to be constant within the frequency
+    increments defined by om_i and Dom.
     returns field in complex form
     
     time  : time grid in atomic units, shape (n_t, n_tau)
@@ -202,8 +208,8 @@ def efield_c(time, om_i, Dom, amp_i, phi_i):
 def efield_re(time, om_i, Dom, amp_i, phi_i):
     '''composes the time domain representation of a laser-electric field in its
     real form based on its properties in the frequency domain. the spectral
-    amplitudes and phases are assumed to be constant in between the given
-    frequency bins bom_i.
+    amplitudes and phases are assumed to be constant within the frequency
+    increments defined by om_i and Dom.
     returns field in real form
     
     time  : time grid in atomic units, shape (n_t, n_tau)
@@ -228,7 +234,7 @@ def efield_re(time, om_i, Dom, amp_i, phi_i):
 
 def find_extrema(amp, phi, j_om, Dom):
     '''determines the time-domain extreme value positions of the given electric
-    field from its frequency-domain properties by finding the eigenvalues of
+    field from its frequency-domain properties, by finding the eigenvalues of
     the underlying trigonometric polynomial's companion matrix. [1]
     the frequency grid of the polynomial is required to be equidistant and
     rooted at zero.
@@ -283,8 +289,8 @@ def rate_adk(E_abs, IE):
     [1] X. M. Tong and C. D. Lin, J. Phys. B 38, 2593--2600 (2005)
     [2] X. M. Tong et al., Phys. Rev. A 66, 033402 (2002)
     
-    E_abs : absolute electric field strength (atomic units)
-    IE    : ionisation energy (atomic units)'''
+    E_abs : absolute electric field strength in atomic units, shape (n_t,)
+    IE    : ionisation energy in atomic units, scalar'''
             
     #get indices for absolute electric field strengths greater than zero:
     b_g0 = E_abs > 0
@@ -330,14 +336,14 @@ def minfunc(para):
     b_win_lo = abs(t_lo) < 0.5*Rt
     t_lo = t_lo[b_win_lo]
     
-    #evaluate fields' extrema:
+    #evaluate fields at extrema:
     E_hi = efield_re(t_hi[:, None], om, Dom, amp_hi, phi_hi)[:, 0]
     E_lo = efield_re(t_lo[:, None], om, Dom, amp_lo, phi_lo)[:, 0]
     
     #compute fraction of weak pulse within observation window:
     E_los = E_lo**2
     It_cen = 0.5*np.sum((E_los[:-1] + E_los[1:])*np.diff(t_lo))
-    eta = max(q_lo - It_cen/It_lo, 0)/q_lo
+    eta = max(q_set - It_cen/It_lo, 0)/q_set
     
     #assess whether strong pulse triggers computable amount of ionisation:
     wi_hi = rate_adk(abs(E_hi), IE0)
@@ -435,9 +441,7 @@ def callback(xk, convergence):
 def extract_field(para0=None):
     '''extracts the laser-electric field from a TIPTOE trace employing the ADK
     tunnelling theory to describe the relative ionisation rate. the ionisation
-    energy of the target is assumed to be field-invariant. optimises model to
-    find spectral amplitude and phase at each point of the given circular-
-    frequency grid
+    energy of the target is assumed to be field-invariant.
     
     para0 : initial guess for parameter vector'''
     
@@ -448,7 +452,7 @@ def extract_field(para0=None):
     #find global optimum of electric field parameters:
     res = differential_evolution(minfunc, bounds, disp=False, x0=para0,
                                  updating='deferred', maxiter=250000,
-                                 workers=max(1, n_co-1), callback=callback,
+                                 workers=n_co, callback=callback,
                                  polish=False, tol=1e-3)
     
     return res
