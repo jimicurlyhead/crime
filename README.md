@@ -14,7 +14,7 @@ Here is a brief explanation of the various input parameters:
 
 identifier : The name of the .h5 file containing the input data -- pump-probe trace, spectra and fluence values.
 
-species : Abbreviation of the atomic/molecular target that was strong-field-ionized in the underlying pump-probe measurement. It is used to assign the (vertical) ionisation energy (add further values to d_IE0_eV if needed).
+species : Abbreviation of the atomic/molecular target that was strong-field-ionized in the underlying pump-probe measurement. It is used to assign the (vertical) ionisation energy in the tunnelling model (add further values to d_IE0_eV if needed).
 
 frac : Fraction of the total fluence that should be kept when setting up the frequency grid. A value close to 1 (like 0.998) enables an efficient use of parameter space and at the same time ensures that the majority of the input spectrum will be covered by the reconstruction grid. You can play a bit with the *_results.py files (check_input=True) to see how the input spectrum is mapped onto the frequency grid for the reconstruction.
 
@@ -24,6 +24,6 @@ q_set : Lower bound for the fraction of the weaker pulse's fluence that has to b
 
 n_co : Number of computing cores that are available for multithreading. The underlying parameter optimisation problem is being solved by means of a SciPy implementation of the differential evolutionary algorithm, which can be strongly accelerated by using many CPUs in parallel.
 
-check_input : True/False. Assume flat spectral phases and show resulting spectra and waveforms. Turn to True to visualise the input data and the impact of frac, n_om0 and q_set. Turn to False to run the actual waveform reconstruction.
+check_input : True/False. Assume flat spectral phases and show resulting spectra and waveforms. Turn to True to visualise the input data and the impact of frac, n_om0 and q_set. Turn to False to see the results of an actual waveform reconstruction.
 
-Use the respective *.results.py file with check_input=True to get an idea about the setup of the frequency grid and the resulting laser-electric fields. This option assumes flat spectral phases for both waveforms and allows you a view at the pulses at their Fourier limit. That way, you can get a feeling how the choice of frac and n_om0 influences the creation of the frequency grid, and receive an upper limit for q_set.
+Use the respective *.results.py file with check_input=True to get an idea about the setup of the frequency grid and the resulting laser-electric fields. This option assumes flat spectral phases for both waveforms and allows you a view at the pulses at their Fourier limit. That way, you can get a feeling how the choice of frac and n_om0 influences the creation of the frequency grid, and receive an upper limit for q_set. A successful optimisation will result in a good agreement between the measured and the reconstructed pump-probe trace and, at the same time, give a sufficiently low total optimisation target, chi + zeta + eta << 1.
