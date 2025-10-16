@@ -454,7 +454,7 @@ def extract_field(para0=None):
     res = differential_evolution(minfunc, bounds, disp=False, x0=para0,
                                  updating='deferred', maxiter=250000,
                                  workers=n_co, callback=callback,
-                                 polish=False, tol=1e-3)
+                                 polish=False, tol=1e-2)
     
     return res
 
