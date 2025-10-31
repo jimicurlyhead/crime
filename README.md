@@ -1,7 +1,9 @@
-This repository accomodates the files for laser-electric waveform retrieval based on the CRIME algorithm. Details on the algorithm itself and on the experimental implementation can be found in this article:
+This repository accomodates the codes for laser-electric waveform retrieval based on the CRIME algorithm. Please cite the following article when using CRIME:
 
 J. Wiese, K. Brupbacher et al., "Universal and waveform-resolving dual pulse reconstruction through interferometric strong-field ionization", Optics Express 32(27), pp. 48734-48747 (2024), https://doi.org/10.1364/OE.534553
-  
+
+The article contains all relevant details on the algorithm itself and on the experimental implementation.
+
 The project is written purely in Python, using NumPy and SciPy libraries, and includes three different variants of the CRIME algorithm, each with individual input requirements and resulting output quality. For each of the three variants (CRIME, twinCRIME, lazyCRIME), there is an equivalent *_results.py file provided that serves a twofold purpose: it visualises the results of a running/finished waveform retrieval and it enables the user to check the processing of the input data and parameters. All variants of the algorithm reconstruct the waveform-resolved laser-electric fields of both pulses that are involved in the underlying pump-probe measurement.
 
 The basic CRIME algorithm, as described in the above-mentioned article, allows for the dual retrieval of two different, arbitrary waveforms and requires an individual spectrum and a peak fluence value for each of the two pulses as input.
