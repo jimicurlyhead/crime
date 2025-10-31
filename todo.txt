@@ -1,0 +1,6 @@
+* change to user-defined IE
+* elaborate about convergence, .snp file
+* refer to input data structure
+* add references
+* check better DE parameters
+* improve figure formats
