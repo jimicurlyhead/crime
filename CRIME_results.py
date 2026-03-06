@@ -12,7 +12,7 @@
 identifier  = 'inputexample'
 
 #define retrieval parameters:
-species     = 'He' #define atomic/molecular target
+IE_eV       = 24.587 #(vertical) ionisation energy (eV)
 frac        = 0.998 #fraction of total fluence to be covered by frequency grid
 q_set       = 0.90 #minimum fraction of weak pulse's fluence within delay/time window
 n_om0       = 10 #number of frequency grid points
@@ -52,15 +52,18 @@ E_au    = U_au/(e*a_0) #atomic unit of electric field strength (V/m)
 a_au    = (e*a_0)**2 / U_au #atomic unit of electric polarisability (C^2*m^2/J)
 D2au    = 0.3934303 #1 Debye in atomic units
 
-#set up dictionary of field-free vertical ionisation energies (eV):
-d_IE0_eV = {'He':24.587, 'Ne':21.565, 'Ar':15.759, 'N2':15.58}
+#(vertical) ionisation energies from https://cccbdb.nist.gov:
+#He : 24.587 eV
+#Ne : 21.565 eV
+#Ar : 15.759 eV
+#N2 : 15.58 eV
 
 # =============================================================================
 # LOAD EXPERIMENTAL DATA:
 # =============================================================================
 
 #set up name for snapshot file:
-file_snp = 'crime_{}_{}_nom={}_frac={}_qlo={}.snp'.format(identifier, species, n_om0, frac, q_set)
+file_snp = 'crime_{}_IE={}eV_nom={}_frac={}_qlo={}.snp'.format(identifier, IE_eV, n_om0, frac, q_set)
 
 #load input data:
 file = '{}.h5'.format(identifier)
@@ -69,7 +72,7 @@ with h5py.File(file, 'r') as h5:
     for key in h5:
         print('  ' + key)
     delay_fs = h5['delay (fs)'][:]
-    trace = h5['rel. yield {}+'.format(species)][:]
+    trace = h5['rel. yield He+'][:]
     wav_spec_hi = h5['wavelength strong pulse (nm)'][:]
     spec_hi = h5['spectral intensity strong pulse (arb. u.)'][:]
     wav_spec_lo = h5['wavelength weak pulse (nm)'][:]
@@ -91,7 +94,7 @@ norm = np.sum((trace - 1)**2)
 Rt = max(delay) - min(delay)
 
 #convert field-free ionisation energy to atomic units:
-IE0 = d_IE0_eV[species]*e/U_au
+IE = IE_eV*e/U_au
 
 # =============================================================================
 # FREQUENCY GRID:
@@ -370,7 +373,7 @@ def chiqtm(para):
     It_cen = 0.5*np.sum((E_los[:-1] + E_los[1:])*np.diff(t_lo))
     
     #assess whether strong pulse triggers computable amount of ionisation:
-    wi_hi = rate_adk(abs(E_hi), IE0)
+    wi_hi = rate_adk(abs(E_hi), IE)
     if 1 - np.prod(1 - wi_hi) > 0:
         
         #discard positive minima and negative maxima:
@@ -406,8 +409,8 @@ def chiqtm(para):
         E_lo_trz = efield_re(t_trz[:, None] - delay[None], om_lo, Dom_lo, amp_lo, phi_lo)
         
         #compute instantaneous ionisation rates:
-        wi_ref = rate_adk(abs(E_hi_trz[:, 0]), IE0)
-        wi_sum = rate_adk(abs(E_hi_trz + E_lo_trz), IE0)
+        wi_ref = rate_adk(abs(E_hi_trz[:, 0]), IE)
+        wi_sum = rate_adk(abs(E_hi_trz + E_lo_trz), IE)
         
         #integrate along realtime axis to obtain cation populations:
         wm_ref = 0.5*(wi_ref[:-1] + wi_ref[1:])
@@ -540,8 +543,8 @@ E_hi_trz = efield_re(t_trz[:, None], om_hi, Dom_hi, amp_hi, phi_hi)
 E_lo_trz = efield_re(t_trz[:, None] - delay[None], om_lo, Dom_lo, amp_lo, phi_lo)
 
 #compute instantaneous ionisation rates:
-wi_ref = rate_adk(abs(E_hi_trz[:, 0]), IE0)
-wi_sum = rate_adk(abs(E_hi_trz + E_lo_trz), IE0)
+wi_ref = rate_adk(abs(E_hi_trz[:, 0]), IE)
+wi_sum = rate_adk(abs(E_hi_trz + E_lo_trz), IE)
 
 #integrate along realtime axis to obtain cation populations:
 wm_ref = 0.5*(wi_ref[:-1] + wi_ref[1:])

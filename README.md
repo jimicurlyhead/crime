@@ -1,22 +1,28 @@
-This repository accomodates the codes for laser-electric waveform retrieval based on the CRIME algorithm. Please cite the following article when using CRIME:
+This repository accommodates the codes for laser-electric waveform retrieval based on the CRIME algorithm. Please cite the following articles when using CRIME or its variants:
 
-J. Wiese, K. Brupbacher et al., "Universal and waveform-resolving dual pulse reconstruction through interferometric strong-field ionization", Optics Express 32(27), pp. 48734-48747 (2024), https://doi.org/10.1364/OE.534553
+[1] J. Wiese, K. Brupbacher et al., "Universal and waveform-resolving dual pulse reconstruction through interferometric strong-field ionization", Optics Express 32(27), pp. 48734-48747 (2024), https://doi.org/10.1364/OE.534553
 
-The article contains all relevant details on the algorithm itself and on the experimental implementation.
+[2] C. S. Leung, J. Wiese, K. Brupbacher, H. J. Wörner, "Universal in-line waveform characterization using arbitrary non-linear responses", arXiv, 1 (2025), https://doi.org/10.48550/ARXIV.2511.04436
+
+While [1] contains all relevant details on the algorithm itself and on the general experimental implementation, [2] demonstrates the use of various different atomic/molecular targets and nonlinear responses that can be employed experimentally.
 
 The project is written purely in Python, using NumPy and SciPy libraries, and includes three different variants of the CRIME algorithm, each with individual input requirements and resulting output quality. For each of the three variants (CRIME, twinCRIME, lazyCRIME), there is an equivalent *_results.py file provided that serves a twofold purpose: it visualises the results of a running/finished waveform retrieval and it enables the user to check the processing of the input data and parameters. All variants of the algorithm reconstruct the waveform-resolved laser-electric fields of both pulses that are involved in the underlying pump-probe measurement.
 
-The basic CRIME algorithm, as described in the above-mentioned article, allows for the dual retrieval of two different, arbitrary waveforms and requires an individual spectrum and a peak fluence value for each of the two pulses as input.
+The basic CRIME algorithm, as described in [1], allows for the dual retrieval of two different, arbitrary waveforms and requires an individual spectrum and a peak fluence value for each of the two pulses as input.
 
-Both twinCRIME and lazyCRIME assume pulse pairs with identical waveforms (apart from a scalar spectral phase offset) and thereby offer an accelerated reconstruction process, because the underlying parameter space is roughly half as large compared to CRIME. As CRIME, twinCRIME provides waveforms with accuate absolute electric field strengths, but it only requires a single spectrum and two peak fluence values as input. lazyCRIME further eliminates the need for fluence input by introducing the peak fluence values as additional optimisation parameters. The only input, besides the pump-probe trace, is a single spectrum on arbitrary intensity scale. While we found lazyCRIME to be extremely robust in retrieving the temporal shape of the waveform [Sam's paper], the absoloute scale of the resulting electric fields carries a large uncertainty.
+Both twinCRIME and lazyCRIME assume pulse pairs with identical waveforms (apart from a scalar spectral phase offset) and thereby offer an accelerated reconstruction process, because the underlying parameter space is roughly half as large compared to CRIME. As CRIME, twinCRIME provides waveforms with accurate absolute electric field strengths, but it only requires a single spectrum and two peak fluence values as input. lazyCRIME further eliminates the need for fluence input by introducing the peak fluence values as additional optimisation parameters. The only input, besides the pump-probe trace, is a single spectrum on arbitrary intensity scale. While we found lazyCRIME to be extremely robust in retrieving the temporal shape of the waveform [2], the absolute scale of the resulting electric fields carries a large uncertainty.
 
-With inputexample.h5 we provide exemplary input data to demonstrate the feed-in of measured data. All three variants of the algorithm can be tested with this sample input. For low numbers of frequency bands (n_om0 <= 10) and moderate numbers of CPUs (n_co >= 3), they should deliver converged waveforms within minutes when run on a regular workstation computer. For reconstruction runs with much larger frequency grids, it is advisable to use computer architecture that allows for multithreading with dozens of cores. The file CRIME_monitor.py prints a summary of all running reconstruction jobs, based on the snapshot files that contain the momentarily best solutions.
+twinCRIME represents the most stringent of the three reconstruction variants. Whereas CRIME and lazyCRIME possess the parameter freedom to adjust the relative electric field strength between strong and weak field, twinCRIME relies on precise fluence inputs. If you experience that twinCRIME fails to correctly reproduce the amplitude of the relative ion yield trace, this is likely rooted in incorrect fluence values.
+
+With inputexample.h5 we provide exemplary input data to demonstrate the feed-in of measured data. All three variants of the algorithm can be tested with this sample input. For low numbers of frequency bands (n_om0 <= 10) and moderate numbers of CPUs (n_co >= 3), they should deliver converged waveforms within minutes when run on a regular workstation computer. For reconstruction runs with much larger frequency grids, it is advisable to use computer architecture that allows for multithreading with dozens of cores.
+
+The progress of the reconstruction process can be surveyed through the snapshot file (*.snp) that is created and regularly updated in the course of parameter optimisation. The python script CRIME_monitor.py prints a summary of all running reconstruction jobs based on the snapshot files in its directory. Due to the possibly very high dimensional parameter spaces that need to be explored (especially for CRIME), the algorithm will not always abort by itself, even if the retrieval has actually converged. You can observe the convergence process by following the value of "minfunc(x)" in the snapshot files. Values below 0.2 commonly show a good and values below 0.1 an excellent reconstruction result.
 
 Here is a brief explanation of the various input parameters:
 
-identifier : The name of the .h5 file containing the input data -- pump-probe trace, spectra and fluence values.
+identifier : The name of the HDF5 (.h5) file containing the input data -- pump-probe trace, spectra and fluence values.
 
-species : Abbreviation of the atomic/molecular target that was strong-field-ionized in the underlying pump-probe measurement. It is used to assign the (vertical) ionisation energy in the tunnelling model (add further values to d_IE0_eV if needed).
+IE_eV : (Vertical) ionisation energy of the target atom/molecule in eV (check https://cccbdb.nist.gov for further atomic/molecular species).
 
 frac : Fraction of the total fluence that should be kept when setting up the frequency grid. A value close to 1 (like 0.998) enables an efficient use of parameter space and at the same time ensures that the majority of the input spectrum will be covered by the reconstruction grid. You can play a bit with the *_results.py files (check_input=True) to see how the input spectrum is mapped onto the frequency grid for the reconstruction.
 
@@ -24,7 +30,7 @@ n_om0 : Desired number of frequency bands. The same number will be applied for b
 
 q_set : Lower bound for the fraction of the weaker pulse's fluence that has to be contained within the observation time window. The closer q_set to the q value of the Fourier-limited pulse, the more accurate will the resulting absolute electric fields be. The lower q_set, the more freedom will the algorithm have to shift around some of the pulse's fluence in time, possibly resulting in a better reconstruction of the pump-probe trace. It is advisable to start with a value close to q of the Fourier-limited pulse and then reduce that number, if the reconstruction did not provide sufficient agreement with the experimental pump-probe trace.
 
-n_co : Number of computing cores that are available for multithreading. The underlying parameter optimisation problem is being solved by means of a SciPy implementation of the differential evolutionary algorithm, which can be strongly accelerated by using many CPUs in parallel.
+n_co : Number of computing threads that are available for multithreading. The underlying parameter optimisation problem is being solved by means of a SciPy implementation of the differential evolutionary algorithm, which can be strongly accelerated by using many CPUs in parallel.
 
 check_input : True/False. Assume flat spectral phases and show resulting spectra and waveforms. Turn to True to visualise the input data and the impact of frac, n_om0 and q_set. Turn to False to see the results of an actual waveform reconstruction.
 

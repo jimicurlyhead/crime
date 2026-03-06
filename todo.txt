@@ -1,6 +1,4 @@
-* change to user-defined IE
-* elaborate about convergence, .snp file
+* update reference to Sam's OE article once available
 * refer to input data structure
-* add references
-* check better DE parameters
+* test improved parameters for differential evolution
 * improve figure formats
