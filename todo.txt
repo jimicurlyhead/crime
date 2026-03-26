@@ -1,4 +1,3 @@
-* update reference to Sam's OE article once available
 * refer to input data structure
 * test improved parameters for differential evolution
 * improve figure formats
